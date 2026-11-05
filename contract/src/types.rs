@@ -42,6 +42,7 @@ pub struct Request {
     pub nonce: u64,
     pub memo: String,
     pub status: RequestStatus,
+    /// The time the request was made, in seconds since the epoch.
     pub created_at: u64,
     pub receipt_id: Option<u64>,
     /// Why the counterparty check asked for a human.
@@ -66,9 +67,11 @@ pub struct Receipt {
     pub rule: String,
     /// The facts behind the decision.
     pub evidence: Vec<String>,
+    /// The start of the budget period this decision belongs to, in seconds.
     pub period_start: u64,
     pub spent_after: u128,
     pub remaining_after: u128,
+    /// The time the receipt was written, in seconds since the epoch.
     pub created_at: u64,
 }
 
@@ -93,6 +96,7 @@ pub struct PolicyView {
     pub agent_id: String,
     pub budget: u128,
     pub period_seconds: u64,
+    /// The start of the current budget period, in seconds since the epoch.
     pub period_start: u64,
     pub spent: u128,
     pub remaining: u128,

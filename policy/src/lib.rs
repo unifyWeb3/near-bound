@@ -60,7 +60,11 @@ pub struct Policy {
     pub budget: u128,
     /// How long one budget period lasts, in seconds.
     pub period_seconds: u64,
-    /// When the current period started.
+    /// When the current period started, in seconds since the epoch.
+    ///
+    /// The unit is seconds, and the caller must convert. The chain reports
+    /// the block timestamp in nanoseconds, and a nanosecond value here makes
+    /// every period look finished, which resets the budget on every call.
     pub period_start: u64,
     /// How much has been spent in the current period.
     pub spent: u128,
@@ -70,7 +74,7 @@ pub struct Policy {
     pub max_single_spend: u128,
     /// How many payments are allowed in one minute.
     pub rate_limit: u64,
-    /// When the current rate window started.
+    /// When the current rate window started, in seconds since the epoch.
     pub rate_window_start: u64,
     /// How many payments happened in the current rate window.
     pub rate_count: u64,
@@ -83,6 +87,8 @@ pub struct Policy {
 }
 
 /// Roll the budget period over when the previous one has ended.
+///
+/// The times are in seconds since the epoch. See `Policy::period_start`.
 pub fn roll_period(policy: &Policy, now: u64) -> (u64, u128) {
     if policy.period_seconds == 0 {
         return (now, 0);
@@ -95,6 +101,8 @@ pub fn roll_period(policy: &Policy, now: u64) -> (u64, u128) {
 }
 
 /// Count the payments in the current rate window.
+///
+/// The times are in seconds since the epoch. See `Policy::rate_window_start`.
 pub fn rate_window(policy: &Policy, now: u64) -> (u64, u64) {
     if now.saturating_sub(policy.rate_window_start) >= 60 {
         (now, 0)
@@ -104,6 +112,9 @@ pub fn rate_window(policy: &Policy, now: u64) -> (u64, u64) {
 }
 
 /// Check one spend request against one policy.
+///
+/// `now` is the current time in seconds since the epoch, the same unit as
+/// `Policy::period_start` and `Policy::rate_window_start`.
 ///
 /// `blocked` is the owner's blocklist decision, which the contract holds on
 /// chain. The richer counterparty signals live off chain and reach the

@@ -19,6 +19,17 @@ pub use bound_policy::Evaluation;
 pub use bound_policy::Policy;
 pub use types::{Outcome, PolicyView, Receipt, Request, RequestStatus, SpendOutcome};
 
+/// The current time in seconds.
+///
+/// The chain reports the block timestamp in nanoseconds. The policy engine
+/// compares that time against a period in seconds and a rate window in
+/// seconds, so the contract converts once, here, and every stored timestamp
+/// is in seconds. Mixing the two units makes a period look like it has
+/// already ended, which silently resets the budget on every call.
+fn now_seconds() -> u64 {
+    near_sdk::env::block_timestamp() / 1_000_000_000
+}
+
 /// The contract state.
 #[near(contract_state)]
 pub struct Bound {
@@ -91,7 +102,7 @@ impl Bound {
         require!(rate_limit > 0, "the rate limit must be more than zero");
         require!(max_single_spend > 0, "the single spend limit must be more than zero");
 
-        let now = near_sdk::env::block_timestamp();
+        let now = now_seconds();
         let policy = Policy {
             agent_id: agent_id.to_string(),
             budget,
@@ -176,7 +187,7 @@ impl Bound {
         let caller = near_sdk::env::predecessor_account_id();
         require!(caller == agent_id, "only the agent may request a spend for itself");
 
-        let now = near_sdk::env::block_timestamp();
+        let now = now_seconds();
         if self.kill_switch {
             let policy = self.policy(&agent_id);
             let (period_start, spent) = bound_policy::roll_period(&policy, now);
@@ -298,7 +309,7 @@ impl Bound {
             "only a pending request can be approved"
         );
 
-        let now = near_sdk::env::block_timestamp();
+        let now = now_seconds();
         let mut policy = self.policy(&request.agent_id);
         let blocked = self.blocklist.contains(&request.vendor);
         let decision = bound_policy::evaluate(
@@ -437,7 +448,7 @@ impl Bound {
         require!(!reason.is_empty(), "a rejection needs a reason");
 
         let policy = self.policy(&request.agent_id);
-        let now = near_sdk::env::block_timestamp();
+        let now = now_seconds();
         let (period_start, spent) = bound_policy::roll_period(&policy, now);
 
         let receipt = self.write_receipt(
@@ -495,7 +506,7 @@ impl Bound {
     /// Read one policy.
     pub fn get_policy(&self, agent_id: AccountId) -> PolicyView {
         let policy = self.policy(&agent_id);
-        let now = near_sdk::env::block_timestamp();
+        let now = now_seconds();
         let (period_start, spent) = bound_policy::roll_period(&policy, now);
         PolicyView {
             agent_id: policy.agent_id,
@@ -618,7 +629,7 @@ impl Bound {
             period_start,
             spent_after: spent,
             remaining_after: remaining,
-            created_at: near_sdk::env::block_timestamp(),
+            created_at: now_seconds(),
         };
         self.receipts.insert(&receipt_id, &receipt);
         receipt
