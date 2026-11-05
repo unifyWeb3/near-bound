@@ -175,9 +175,40 @@ impl Bound {
     ) -> SpendOutcome {
         let caller = near_sdk::env::predecessor_account_id();
         require!(caller == agent_id, "only the agent may request a spend for itself");
-        require!(!self.kill_switch, "the kill switch is on");
 
         let now = near_sdk::env::block_timestamp();
+        if self.kill_switch {
+            let policy = self.policy(&agent_id);
+            let (period_start, spent) = bound_policy::roll_period(&policy, now);
+            let receipt = self.write_receipt(
+                &agent_id,
+                &vendor,
+                amount,
+                nonce,
+                &memo,
+                0,
+                Outcome::Denied,
+                "KillSwitch",
+                "the owner stopped every agent",
+                &["kill switch is on".to_string()],
+                period_start,
+                spent,
+                policy.budget.saturating_sub(spent),
+            );
+            near_sdk::env::log_str(&format!(
+                "SpendDenied {} {} KillSwitch",
+                agent_id, vendor
+            ));
+            return SpendOutcome {
+                request_id: 0,
+                approved: false,
+                reason: "KillSwitch".to_string(),
+                rule: "the owner stopped every agent".to_string(),
+                evidence: receipt.evidence,
+                spent: receipt.spent_after,
+                remaining: receipt.remaining_after,
+            };
+        }
         let policy = self.policy(&agent_id);
         let blocked = self.blocklist.contains(&vendor);
 
