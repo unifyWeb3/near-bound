@@ -1,0 +1,9 @@
+[package]
+name = "bound-policy"
+version = "0.1.0"
+edition = "2021"
+description = "Pure policy engine for bound"
+license = "MIT"
+
+[dependencies]
+borsh = { version = "1.5", features = ["derive"] }
