@@ -8,6 +8,17 @@ method on one contract, it cannot attach a deposit, and the contract checks
 every request against a policy the agent cannot edit. Approved and denied
 attempts both leave a receipt.
 
+## Live console
+
+**https://spendguard-oxunify.vercel.app/**
+
+SpendGuard is a static page with no backend and no database. Every number it
+prints is read from the public testnet RPC at the moment the page opens, and
+the page carries the curl commands that reproduce each number. It shows the
+live policy, the money under management, every decision with its rule and
+evidence, the blocked attempts grouped by reason, and the exact protocol
+errors the scoped key produces when it is misused.
+
 ## The problem
 
 An autonomous agent that buys API calls needs a credential with money behind

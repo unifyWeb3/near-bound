@@ -125,6 +125,7 @@ function renderStats(state) {
   const protectedValue = sumYocto(receipts, (r) => (r.outcome === 'Denied' ? r.amount : 0n));
 
   const buttons = [
+    ['Under management', formatNear(state.treasury), 'held by the contract'],
     ['Approved', formatCount(approved), 'reads on chain'],
     ['Blocked', formatCount(denied), 'never paid out'],
     ['Allowed value', formatNear(allowedValue), 'total that settled'],
@@ -144,10 +145,11 @@ function renderStats(state) {
 
   const spent = BigInt(policy.spent);
   const sentence = el('p', 'governed');
+  const frozen = state.killSwitch ? 'Kill switch on, every agent frozen.' : 'Kill switch off.';
   if (spent > 0n) {
-    sentence.textContent = `Governed since ${new Date(timestampSeconds(policy.period_start) * 1000).toLocaleDateString()}. ${formatNear(spent)} allowed through this hour.`;
+    sentence.textContent = `${frozen} Governed since ${new Date(timestampSeconds(policy.period_start) * 1000).toLocaleDateString()}. ${formatNear(spent)} allowed through this hour.`;
   } else {
-    sentence.textContent = `Governed since ${new Date(timestampSeconds(policy.period_start) * 1000).toLocaleDateString()}. The current hour is clean.`;
+    sentence.textContent = `${frozen} Governed since ${new Date(timestampSeconds(policy.period_start) * 1000).toLocaleDateString()}. The current hour is clean.`;
   }
   host.append(sentence);
 }
