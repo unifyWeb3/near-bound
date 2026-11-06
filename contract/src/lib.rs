@@ -566,6 +566,16 @@ impl Bound {
     pub fn treasury_balance(&self) -> u128 {
         near_sdk::env::account_balance().as_yoctonear()
     }
+
+    /// How many receipts the contract has written.
+    ///
+    /// Together with `get_receipt` this lets a reader list every decision the
+    /// contract has made, including the denials. Denials never create a
+    /// request, so without this count the only way to find their receipts is
+    /// to guess an id.
+    pub fn get_receipt_count(&self) -> u64 {
+        self.next_receipt_id
+    }
 }
 
 /// The helpers that are not part of the public interface.

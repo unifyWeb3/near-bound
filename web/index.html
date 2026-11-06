@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bound - agent spend policy on NEAR testnet</title>
+    <meta
+      name="description"
+      content="Bound holds an owner's money on NEAR and lets an agent ask to spend it. The chain enforces the policy and every decision leaves a receipt."
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="error-bar" class="error-bar" hidden></div>
+
+    <header class="site-header">
+      <div class="brand">
+        <h1>Bound</h1>
+        <p>Give an agent a wallet and keep the leash.</p>
+      </div>
+      <div class="header-meta">
+        <span class="network"><span class="dot"></span> NEAR testnet</span>
+        <a
+          class="mono"
+          href="https://testnet.nearblocks.io/address/bound-testnet-97685.testnet"
+          target="_blank"
+          rel="noopener"
+          >bound-testnet-97685.testnet</a
+        >
+      </div>
+    </header>
+
+    <main>
+      <section id="stats" class="stats" aria-label="Summary"></section>
+
+      <section class="grid">
+        <div id="policy" class="panel"></div>
+        <div id="key" class="panel"></div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head">
+          <h2>Decision feed</h2>
+          <div class="controls">
+            <span id="loaded" class="muted small"></span>
+            <button id="refresh" type="button">Refresh</button>
+          </div>
+        </div>
+        <div id="feed" class="feed" aria-live="polite"></div>
+      </section>
+
+      <section id="protocol" class="panel"></section>
+    </main>
+
+    <footer>
+      <p>Read only. This page never asks for a key and never signs a transaction.</p>
+      <p>
+        <a href="https://github.com/unifyWeb3/near-bound">Source</a>
+        <span class="sep">/</span>
+        <a href="https://github.com/unifyWeb3/near-quorum">Other project: quorum</a>
+      </p>
+    </footer>
+
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
