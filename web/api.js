@@ -131,6 +131,16 @@ export function timestampSeconds(value) {
   return Number(raw);
 }
 
+/** Read the treasury balance. */
+export function getTreasuryBalance() {
+  return viewFunction(CONFIG.contract, 'treasury_balance', {});
+}
+
+/** Whether the owner froze every agent. */
+export function getKillSwitch() {
+  return viewFunction(CONFIG.contract, 'get_kill_switch', {});
+}
+
 /** Read every receipt, newest first, for the demo agent. */
 export async function getReceipts() {
   const count = await viewFunction(CONFIG.contract, 'get_receipt_count', {});
@@ -155,10 +165,12 @@ export async function getReceipts() {
  * @param {number} [limit] How many of the newest receipts to keep.
  */
 export async function loadState(limit = 20) {
-  const [policy, ids, receipts] = await Promise.all([
+  const [policy, ids, receipts, treasury, killSwitch] = await Promise.all([
     getPolicy(),
     getRequestIds(),
     getReceipts(),
+    getTreasuryBalance(),
+    getKillSwitch(),
   ]);
   return {
     policy,
@@ -166,6 +178,8 @@ export async function loadState(limit = 20) {
     shown: receipts.slice(0, limit),
     totalRequests: ids.length,
     totalReceipts: receipts.length,
+    treasury,
+    killSwitch,
     loadedAt: new Date(),
   };
 }

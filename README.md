@@ -315,7 +315,7 @@ Denial reasons: `AgentRevoked`, `KillSwitch`, `InvalidAmount`, `NonceReplay`,
 | `policy/` | Pure policy engine, no chain dependency, unit tested |
 | `demo/vendor/` | The paid API stand-in used in the demo |
 | `demo/protocol_arm.sh` | Script for the protocol rejection steps, all checks must print PASS |
-| `web/` | Read only dashboard that calls the RPC, no keys, no build step |
+| `web/` | SpendGuard console, a zero dependency static page that calls the RPC, no keys, no build step |
 
 ## Build and test
 
@@ -349,9 +349,11 @@ cannot compile and that is expected.
   `blocked` flag. Richer signals (account age, code changes, prior
   interactions) are in the pure policy crate and the paper harness, but the
   demo does not wire a live indexer to them.
-- `web/` is a read only dashboard. It calls the public RPC and never signs a
+- `web/` is the SpendGuard console. It calls the public RPC and never signs a
   transaction. There is no browser wallet flow; the write path uses the NEAR
-  CLI, as shown above. To view the dashboard:
+  CLI, as shown above. The counters on the page are derived from the chain,
+  and every one of them can be reproduced with the curl commands in the
+  Judge evidence section. To view the console:
 
   ```bash
   cd web && python3 -m http.server 8000

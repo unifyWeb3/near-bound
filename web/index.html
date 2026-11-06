@@ -3,62 +3,198 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Bound - agent spend policy on NEAR testnet</title>
+    <title>SpendGuard - the spend limit behind your agent | NEAR testnet</title>
     <meta
       name="description"
-      content="Bound holds an owner's money on NEAR and lets an agent ask to spend it. The chain enforces the policy and every decision leaves a receipt."
+      content="SpendGuard gives a coding agent a NEAR allowance and an on-chain policy that it cannot change. Every approved and blocked spend is a receipt a judge can read. Free on NEAR testnet."
     />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%237ee787'/%3E%3Cpath d='M8 21h16M8 15h16M8 9h16' stroke='%230b0f14' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="error-bar" class="error-bar" hidden></div>
 
-    <header class="site-header">
-      <div class="brand">
-        <h1>Bound</h1>
-        <p>Give an agent a wallet and keep the leash.</p>
-      </div>
-      <div class="header-meta">
-        <span class="network"><span class="dot"></span> NEAR testnet</span>
-        <a
-          class="mono"
-          href="https://testnet.nearblocks.io/address/bound-testnet-97685.testnet"
-          target="_blank"
-          rel="noopener"
-          >bound-testnet-97685.testnet</a
-        >
-      </div>
+    <header class="topbar">
+      <a class="brand-mark" href="./">SpendGuard</a>
+      <nav class="topnav" aria-label="Sections">
+        <a href="#who">For who</a>
+        <a href="#live">Live</a>
+        <a href="#enable">Enable</a>
+        <a href="#judge">Judge evidence</a>
+      </nav>
+      <span class="network-badge"><span class="dot"></span> testnet</span>
     </header>
 
     <main>
-      <section id="stats" class="stats" aria-label="Summary"></section>
+      <!-- Hero -->
+      <section class="hero">
+        <div class="hero-copy">
+          <p class="kicker">NEAR testnet · open source · MIT · zero backend</p>
+          <h1>The limit behind your agent.</h1>
+          <p class="lead">
+            A coding agent that buys API credits, market data and compute can be talked into
+            paying. SpendGuard puts a real ceiling behind it. The chain enforces the limit,
+            every attempt is a receipt, and one transaction revokes the agent completely.
+          </p>
+          <div class="cta">
+            <a class="button primary" href="#enable">Enable it in 5 minutes</a>
+            <a class="button ghost" href="#live">See it working on testnet</a>
+          </div>
+          <ul class="proof">
+            <li><strong>Real, not a demo.</strong> Every figure on this page is read from the chain.</li>
+            <li><strong>One transaction lockout.</strong> Delete the key and the agent can ask, but never be paid.</li>
+            <li><strong>No backend.</strong> Nothing to trust, nothing to leak, nothing to go down.</li>
+          </ul>
+        </div>
 
-      <section class="grid">
-        <div id="policy" class="panel"></div>
-        <div id="key" class="panel"></div>
+        <aside class="hero-panel" aria-label="Example of a SpendGuard policy">
+          <div class="wallet-card">
+            <div class="wallet-top">
+              <span class="wallet-label">Agent policy</span>
+              <span class="chip green">live on testnet</span>
+            </div>
+            <div class="wallet-name">bound-agent</div>
+            <div class="wallet-amount" id="hero-remaining">...</div>
+            <div class="wallet-budget-note">remaining of <span id="hero-budget">...</span> per hour</div>
+            <div class="budget-bar"><div class="budget-fill" id="hero-fill"></div></div>
+            <div class="wallet-meta">
+              <div><span class="meta-label">Allowed receivers</span><span class="meta-value">1</span></div>
+              <div><span class="meta-label">Max per spend</span><span class="meta-value" id="hero-maxsingle">...</span></div>
+              <div><span class="meta-label">Rate limit</span><span class="meta-value" id="hero-ratelimit">...</span></div>
+            </div>
+            <div class="wallet-footer">
+              <span class="dot small"></span> Receipt id <span id="hero-receiptid">...</span> written on chain
+            </div>
+          </div>
+        </aside>
       </section>
 
-      <section class="panel">
+      <!-- Who this is for -->
+      <section class="section" id="who">
+        <h2 class="section-title">Who this is for</h2>
+        <p class="section-lead">
+          People on low bandwidth plans, low balances and high risk. They authorise a payment
+          once and watch it happen slowly. A runaway agent competes with that.
+          <span class="muted">Names are illustrative.</span>
+        </p>
+        <div class="personas">
+          <article class="persona">
+            <h3>Tunde, freelance developer, Lagos</h3>
+            <p>
+              Sells five to fifteen hours a week, buys API credits for the agent that writes boilerplate.
+              Concern: one stray prompt drains the prepaid balance before he sees the dashboard.
+            </p>
+          </article>
+          <article class="persona">
+            <h3>Amina, small goods trader, Kaduna</h3>
+            <p>
+              Uses a mobile agent to compare weather, market and satellite data for the planting window.
+              Concern: a file the agent reads tells it to upgrade the plan, in a noisy market she cannot watch.
+            </p>
+          </article>
+          <article class="persona">
+            <h3>Chidi, phone repair shop, Aba</h3>
+            <p>
+              Agents quote the cheapest parts by crawler-scanned vendor catalogs.
+              Concern: a poisoned search result asks for a payment to a vendor with no trading history.
+            </p>
+          </article>
+        </div>
+        <p class="persona-footer">
+          In every case the same failure shape: the tool is fine, the instruction is malicious,
+          and the money moves before the owner can react.
+        </p>
+      </section>
+
+      <!-- Live numbers -->
+      <section class="section" id="live">
         <div class="panel-head">
-          <h2>Decision feed</h2>
+          <h2 class="section-title">Live on NEAR testnet</h2>
           <div class="controls">
             <span id="loaded" class="muted small"></span>
             <button id="refresh" type="button">Refresh</button>
           </div>
         </div>
-        <div id="feed" class="feed" aria-live="polite"></div>
+        <div id="stats-grid" class="stats" aria-live="polite"></div>
+        <p class="muted small">
+          Every figure is read from the public testnet RPC at the moment you open this page.
+          No snapshot, no cache, no invented count. Reproduce any of it yourself in the judge section below.
+        </p>
       </section>
 
-      <section id="protocol" class="panel"></section>
+      <!-- Feed and side column -->
+      <section class="section split" id="feed">
+        <div class="panel feed-panel">
+          <h2 class="section-title">The decision feed <span class="count" id="feed-count"></span></h2>
+          <div id="feed-list" class="feed"></div>
+        </div>
+
+        <div class="side-col">
+          <div class="panel chart-panel">
+            <h3 class="panel-title">Blocked by reason</h3>
+            <div id="chart-reasons" class="bars"></div>
+            <h3 class="panel-title">Decisions by day</h3>
+            <div id="chart-timeline" class="bars"></div>
+          </div>
+          <div class="panel key-panel">
+            <h3 class="panel-title">The agent key cannot do this</h3>
+            <div id="protocol-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Enable -->
+      <section class="section" id="enable">
+        <h2 class="section-title">Enable it, three accounts and five commands</h2>
+        <p class="section-lead">
+          You need testnet NEAR, the <code>near</code> CLI and the <code>bound</code> repository.
+          The commands below are exactly what the demo used, with new accounts. Testnet NEAR is free.
+        </p>
+
+        <ol class="steps" id="steps"></ol>
+      </section>
+
+      <!-- Judge evidence -->
+      <section class="section" id="judge">
+        <details class="judge-details">
+          <summary class="judge-toggle">Judge evidence <span class="muted small">reproduce everything with curl</span></summary>
+          <div class="judge-body">
+            <h3 class="panel-title">1. The policy</h3>
+            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"'$(printf '{"agent_id":"bound-agent.testnet"}' | base64 -w0)'","finality":"optimistic"}}'</pre>
+
+            <h3 class="panel-title">2. The denial, with evidence</h3>
+            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"'$(printf '{"receipt_id":10}' | base64 -w0)'","finality":"optimistic"}}'</pre>
+            <p class="muted small">Receipt 10: <code>VendorNotAllowed</code> and budget evidence lines.</p>
+
+            <h3 class="panel-title">3. The treasury and the key</h3>
+            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_access_key_list","account_id":"bound-agent.testnet","finality":"optimistic"}}'</pre>
+            <p class="muted small">Shows the scoped key next to the full access key. Scope: one receiver, one method, an allowance.</p>
+
+            <h3 class="panel-title">4. Count the decisions</h3>
+            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}'</pre>
+
+            <h3 class="panel-title">Why it is like this</h3>
+            <ul class="evidence-notes">
+              <li>No database and no cache; the same numbers this page prints come from these calls.</li>
+              <li>Receipts survive the redeploy on 2026-11-06; storage was untouched.</li>
+              <li>The harness and the writeup are in the paper repository, Apache 2.0.</li>
+            </ul>
+          </div>
+        </details>
+      </section>
     </main>
 
     <footer>
-      <p>Read only. This page never asks for a key and never signs a transaction.</p>
-      <p>
-        <a href="https://github.com/unifyWeb3/near-bound">Source</a>
-        <span class="sep">/</span>
-        <a href="https://github.com/unifyWeb3/near-quorum">Other project: quorum</a>
-      </p>
+      <div class="footer-top">
+        <div class="footer-brand">SpendGuard</div>
+        <p>A hard limit the agent cannot argue with. Testnet only; no real money has moved.</p>
+      </div>
+      <div class="footer-links">
+        <a href="https://github.com/unifyWeb3/near-bound">bound repository</a>
+        <a href="https://github.com/unifyWeb3/gemma4-agent-spend-cap">paper repository</a>
+        <a href="https://github.com/unifyWeb3/near-quorum">quorum repository</a>
+      </div>
+      <div class="footer-note">MIT licensed. Built at NEAR Hackathon. Contact: <span class="mono">unify@local</span>.</div>
     </footer>
 
     <script type="module" src="app.js"></script>
