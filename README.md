@@ -319,15 +319,25 @@ Denial reasons: `AgentRevoked`, `KillSwitch`, `InvalidAmount`, `NonceReplay`,
 
 ## Build and test
 
+The policy engine is the only crate with unit tests. It has no cryptographic
+dependencies and no NEAR SDK dependency, so it compiles and passes anywhere:
+
 ```bash
 cd policy && cargo test
-cd ../contract && cargo test
-cd ../demo/vendor && cargo test
 ```
 
-`cargo near build non-reproducible-wasm --manifest-path contract/Cargo.toml`
-produces `contract/target/near/bound_contract.wasm`. The repo also builds with
-`cargo build --target wasm32-unknown-unknown --release`.
+Build the contracts to NEAR's WebAssembly format:
+
+```bash
+cargo near build non-reproducible-wasm --manifest-path contract/Cargo.toml
+cargo near build non-reproducible-wasm --manifest-path demo/vendor/Cargo.toml
+```
+
+The `bound` wasm is `contract/target/near/bound_contract.wasm`. There are no
+contract-side unit tests to run; the policy engine is where the rules are
+tested, and the contract is a thin shell around it. The NEAR SDK's host target
+requires a C toolchain, so on minimal machines `cargo test` in `contract/`
+cannot compile and that is expected.
 
 ## Limits
 
