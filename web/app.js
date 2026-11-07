@@ -113,7 +113,7 @@ function renderHero(state) {
   $('hero-fill').style.width = `${Math.max(2, 100 - pct)}%`;
   const approved = state.receipts.filter((r) => r.outcome === 'Approved');
   const latest = approved[0];
-  $('hero-receiptid').textContent = latest ? `#${latest.receipt_id}` : 'none yet';
+  $('hero-receiptid').textContent = latest ? `№ ${latest.receipt_id}` : 'none yet';
 }
 
 /** Render the stat grid and the governed sentence. */
@@ -195,7 +195,7 @@ function renderReceipt(receipt) {
   const item = el('article', 'decision');
   const head = el('div', 'decision-head');
   head.append(el('span', receiptPill(receipt.outcome), receipt.outcome));
-  head.append(el('span', 'decision-id', `#${receipt.receipt_id}`));
+  head.append(el('span', 'decision-id', `№ ${receipt.receipt_id}`));
   head.append(el('span', 'decision-vendor mono', receipt.vendor));
   head.append(el('span', 'decision-amount', formatNear(receipt.amount)));
   item.append(head);
@@ -207,26 +207,30 @@ function renderReceipt(receipt) {
   if (receipt.memo) meta.append(el('span', 'memo', receipt.memo));
   item.append(meta);
 
-  const body = el('div', 'receipt');
+  const body = el('details', 'receipt');
+  const summary = el('summary', null, 'Why this happened');
+  body.append(summary);
+  const receiptBody = el('div', 'receipt-body');
   if (receipt.reason) {
     const line = el('div', 'row');
     line.append(el('span', 'row-label', 'Reason'));
     line.append(el('span', 'row-value mono', receipt.reason));
-    body.append(line);
+    receiptBody.append(line);
   }
   const ruleLine = el('div', 'row');
   ruleLine.append(el('span', 'row-label', 'Rule'));
   ruleLine.append(el('span', 'row-value', receipt.rule));
-  body.append(ruleLine);
+  receiptBody.append(ruleLine);
   if (receipt.evidence?.length) {
     const evidence = el('ul', 'evidence');
     for (const ev of receipt.evidence) evidence.append(el('li', 'mono', ev));
-    body.append(evidence);
+    receiptBody.append(evidence);
   }
   const spentLine = el('div', 'row');
   spentLine.append(el('span', 'row-label', 'Spent after'));
   spentLine.append(el('span', 'row-value', formatNear(receipt.spent_after)));
-  body.append(spentLine);
+  receiptBody.append(spentLine);
+  body.append(receiptBody);
   item.append(body);
   return item;
 }

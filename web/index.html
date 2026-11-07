@@ -8,14 +8,14 @@
       name="description"
       content="SpendGuard gives a coding agent a NEAR allowance and an on-chain policy that it cannot change. Every approved and blocked spend is a receipt a judge can read. Free on NEAR testnet."
     />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%237ee787'/%3E%3Cpath d='M8 21h16M8 15h16M8 9h16' stroke='%230b0f14' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23175e42'/%3E%3Cpath d='M8 21h16M8 15h16M8 9h16' stroke='%23f5f2ea' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <div id="error-bar" class="error-bar" hidden></div>
 
     <header class="topbar">
-      <a class="brand-mark" href="./">SpendGuard</a>
+      <a class="brand-mark" href="./"><span class="mark" aria-hidden="true">S</span>SpendGuard</a>
       <nav class="topnav" aria-label="Sections">
         <a href="#who">For who</a>
         <a href="#live">Live</a>
@@ -29,7 +29,7 @@
       <!-- Hero -->
       <section class="hero">
         <div class="hero-copy">
-          <p class="kicker">NEAR testnet · open source · MIT · zero backend</p>
+          <p class="kicker">On NEAR testnet, open source, MIT, no backend</p>
           <h1>The limit behind your agent.</h1>
           <p class="lead">
             A coding agent that buys API credits, market data and compute can be talked into
@@ -132,7 +132,7 @@
         <div class="side-col">
           <div class="panel chart-panel">
             <h3 class="panel-title">Blocked by reason</h3>
-            <div id="chart-reasons" class="bars"></div>
+            <div id="chart-reasons" class="bars" data-tone="blocked"></div>
             <h3 class="panel-title">Decisions by day</h3>
             <div id="chart-timeline" class="bars"></div>
           </div>
@@ -194,7 +194,7 @@
         <a href="https://github.com/unifyWeb3/gemma4-agent-spend-cap">paper repository</a>
         <a href="https://github.com/unifyWeb3/near-quorum">quorum repository</a>
       </div>
-      <div class="footer-note">MIT licensed. Built at NEAR Hackathon. Contact: <span class="mono">unify@local</span>.</div>
+      <div class="footer-note"><span>MIT licensed, built at NEAR Hackathon</span><span>Source at github.com/unifyWeb3/near-bound</span></div>
     </footer>
 
     <script type="module" src="app.js"></script>
