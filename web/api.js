@@ -7,7 +7,7 @@
  */
 
 export const CONFIG = {
-  rpc: 'https://rpc.testnet.near.org/',
+  rpc: 'https://test.rpc.fastnear.com',
   contract: 'bound-testnet-97685.testnet',
   agent: 'bound-agent.testnet',
   vendor: 'bound-vendor.testnet',
@@ -103,7 +103,10 @@ export function formatNear(yocto) {
   const frac = value % unit;
   if (frac === 0n) return `${whole} NEAR`;
   const digits = frac.toString().padStart(24, '0').replace(/0+$/, '');
-  return `${whole}.${digits.slice(0, 12)} NEAR`;
+  // Whole NEAR balances clamp to 6 fraction digits so the figure fits a
+  // small screen; sub-NEAR amounts keep 8, which is all they need.
+  const cap = whole === 0n ? 8 : 6;
+  return `${whole}.${digits.slice(0, cap)} NEAR`;
 }
 
 /**
@@ -141,22 +144,33 @@ export function getKillSwitch() {
   return viewFunction(CONFIG.contract, 'get_kill_switch', {});
 }
 
-/** Read every receipt, newest first, for the demo agent. */
+/**
+ * Read every receipt, newest first, for the demo agent.
+ *
+ * Returns both the receipts that could be read and the number of calls that
+ * failed, so the page can say it is showing a partial ledger instead of
+ * printing a confident lie when the RPC drops a call.
+ */
 export async function getReceipts() {
   const count = await viewFunction(CONFIG.contract, 'get_receipt_count', {});
   const total = Number(count);
   const receipts = [];
+  let errors = 0;
   for (let id = 0; id < total; id += 1) {
     try {
       const receipt = await viewFunction(CONFIG.contract, 'get_receipt', { receipt_id: id });
       if (receipt.agent_id === CONFIG.agent) receipts.push(receipt);
     } catch {
-      // A gap in the sequence is skipped, not fatal.
+      errors += 1;
     }
   }
-  return receipts.sort(
-    (a, b) => timestampSeconds(b.created_at) - timestampSeconds(a.created_at),
-  );
+  return {
+    receipts: receipts.sort(
+      (a, b) => timestampSeconds(b.created_at) - timestampSeconds(a.created_at),
+    ),
+    total,
+    errors,
+  };
 }
 
 /**
@@ -165,7 +179,7 @@ export async function getReceipts() {
  * @param {number} [limit] How many of the newest receipts to keep.
  */
 export async function loadState(limit = 20) {
-  const [policy, ids, receipts, treasury, killSwitch] = await Promise.all([
+  const [policy, ids, ledger, treasury, killSwitch] = await Promise.all([
     getPolicy(),
     getRequestIds(),
     getReceipts(),
@@ -174,10 +188,12 @@ export async function loadState(limit = 20) {
   ]);
   return {
     policy,
-    receipts,
-    shown: receipts.slice(0, limit),
+    receipts: ledger.receipts,
+    shown: ledger.receipts.slice(0, limit),
     totalRequests: ids.length,
-    totalReceipts: receipts.length,
+    totalReceipts: ledger.receipts.length,
+    chainReceipts: ledger.total,
+    receiptErrors: ledger.errors,
     treasury,
     killSwitch,
     loadedAt: new Date(),

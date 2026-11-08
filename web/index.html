@@ -160,18 +160,18 @@
           <summary class="judge-toggle">Judge evidence <span class="muted small">reproduce everything with curl</span></summary>
           <div class="judge-body">
             <h3 class="panel-title">1. The policy</h3>
-            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"'$(printf '{"agent_id":"bound-agent.testnet"}' | base64 -w0)'","finality":"optimistic"}}'</pre>
+            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"'$(printf '{"agent_id":"bound-agent.testnet"}' | base64 -w0)'","finality":"optimistic"}}'</pre>
 
             <h3 class="panel-title">2. The denial, with evidence</h3>
-            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"'$(printf '{"receipt_id":10}' | base64 -w0)'","finality":"optimistic"}}'</pre>
+            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"'$(printf '{"receipt_id":10}' | base64 -w0)'","finality":"optimistic"}}'</pre>
             <p class="muted small">Receipt 10: <code>VendorNotAllowed</code> and budget evidence lines.</p>
 
             <h3 class="panel-title">3. The treasury and the key</h3>
-            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_access_key_list","account_id":"bound-agent.testnet","finality":"optimistic"}}'</pre>
+            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_access_key_list","account_id":"bound-agent.testnet","finality":"optimistic"}}'</pre>
             <p class="muted small">Shows the scoped key next to the full access key. Scope: one receiver, one method, an allowance.</p>
 
             <h3 class="panel-title">4. Count the decisions</h3>
-            <pre class="code-block">curl -s -X POST https://rpc.testnet.near.org/ -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}'</pre>
+            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}'</pre>
 
             <h3 class="panel-title">Why it is like this</h3>
             <ul class="evidence-notes">

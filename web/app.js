@@ -84,7 +84,7 @@ const STEPS = [
   {
     title: 'Watch the feed, read the receipts',
     body: 'Every decision appears here with the rule that blocked it. A denial is a legitimate outcome, not an error message.',
-    cmd: 'curl -s -X POST https://rpc.testnet.near.org/ -H \'Content-Type: application/json\' -d \'{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"OWNER","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}\'',
+    cmd: 'curl -s -X POST https://test.rpc.fastnear.com -H \'Content-Type: application/json\' -d \'{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"OWNER","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}\'',
   },
   {
     title: 'Revoke the agent instantly',
@@ -318,7 +318,11 @@ async function refresh() {
     renderCharts(state);
     renderFeed(state);
     $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}`;
-    $('error-bar').hidden = true;
+    const partial = (state.receiptErrors ?? 0) > 0;
+    $('error-bar').hidden = !partial;
+    $('error-bar').textContent = partial
+      ? `Some chain calls failed (${state.receiptErrors} of ${state.chainReceipts}). Showing what could be read, not a complete ledger. Try Refresh.`
+      : '';
   } catch (error) {
     renderError(error);
     $('error-bar').hidden = false;

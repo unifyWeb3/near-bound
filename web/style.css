@@ -24,6 +24,7 @@ html,
 body {
   margin: 0;
   padding: 0;
+  overflow-x: hidden;
   background: var(--paper);
   color: var(--ink);
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -82,8 +83,7 @@ code {
   align-items: center;
   gap: 18px;
   padding: 12px 20px;
-  background: rgba(245, 242, 234, 0.92);
-  backdrop-filter: blur(8px);
+  background: var(--paper);
   border-bottom: 1px solid var(--line);
 }
 
@@ -908,6 +908,21 @@ button:disabled {
   white-space: pre;
   margin: 0 0 10px;
   color: var(--ink-2);
+}
+
+.code-block {
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 12px;
+  overflow-x: auto;
+  white-space: pre;
+  margin: 0 0 14px;
+  color: var(--ink-2);
+  -webkit-overflow-scrolling: touch;
 }
 
 .copy-button {
