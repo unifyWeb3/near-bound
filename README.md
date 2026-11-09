@@ -374,8 +374,8 @@ cannot compile and that is expected.
 ## Independence and disclosure
 
 - This is one of two independent NEAR submissions by the same builder. The
-  other project is `quorum`, a sealed bid group buying swarm at
-  `https://github.com/unifyWeb3/near-quorum`. The two repositories share no
+  other project is `keyhalt`, a control plane for native NEAR account keys
+  at `https://github.com/unifyWeb3/keyhalt`. The two repositories share no
   code, no contract, and no package. They share a thesis and a builder.
 - No code in this repository existed before 2026-11-01. The build window is
   2026-11-01 to 2026-11-14.
