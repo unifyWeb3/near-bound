@@ -236,8 +236,8 @@ function renderReceipt(receipt) {
 }
 
 /** Render the feed list. */
-function renderFeed(state) {
-  $('feed-count').textContent = `${state.shown.length} of ${state.totalReceipts}`;
+function renderFeed(state, stale = false) {
+  $('feed-count').textContent = `${state.shown.length} of ${state.totalReceipts}${stale ? ' (stale)' : ''}`;
   const host = $('feed-list');
   host.replaceChildren();
   if (state.shown.length === 0) {
@@ -306,6 +306,7 @@ function renderError(error) {
 }
 
 let timer = null;
+let lastGood = null;
 
 async function refresh() {
   const button = $('refresh');
@@ -317,6 +318,7 @@ async function refresh() {
     renderStats(state);
     renderCharts(state);
     renderFeed(state);
+    lastGood = state;
     $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}`;
     const partial = (state.receiptErrors ?? 0) > 0;
     $('error-bar').hidden = !partial;
@@ -324,9 +326,20 @@ async function refresh() {
       ? `Some chain calls failed (${state.receiptErrors} of ${state.chainReceipts}). Showing what could be read, not a complete ledger. Try Refresh.`
       : '';
   } catch (error) {
-    renderError(error);
-    $('error-bar').hidden = false;
-    $('error-bar').textContent = String(error.message ?? error);
+    if (lastGood) {
+      // Stale-state path: keep the last good view visible, labelled stale.
+      renderHero(lastGood);
+      renderStats(lastGood);
+      renderCharts(lastGood);
+      renderFeed(lastGood, true);
+      $('loaded').textContent = `Stale, last successful read at ${lastGood.loadedAt.toLocaleTimeString()}`;
+      $('error-bar').hidden = false;
+      $('error-bar').textContent = `Could not refresh: ${String(error.message ?? error)}. Showing last successful read.`;
+    } else {
+      renderError(error);
+      $('error-bar').hidden = false;
+      $('error-bar').textContent = String(error.message ?? error);
+    }
   } finally {
     button.disabled = false;
     button.textContent = 'Refresh';
