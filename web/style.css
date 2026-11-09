@@ -1216,3 +1216,21 @@ summary:focus-visible {
   outline-offset: 3px;
   border-radius: 4px;
 }
+
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 0;
+  padding: 8px 16px;
+  background: var(--panel);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  font-size: 13px;
+  z-index: 60;
+}
+
+.skip-link:focus {
+  left: 12px;
+  top: 12px;
+}
