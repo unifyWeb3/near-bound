@@ -301,8 +301,14 @@ impl Bound {
     }
 
     /// Move the money. The owner and the runner may do this.
+    ///
+    /// While the owner has frozen every agent no request can be approved.
     pub fn approve_request(&mut self, request_id: u64) -> SpendOutcome {
         self.only_owner_or_runner();
+        require!(
+            !self.kill_switch,
+            "the kill switch is on, no request can be approved"
+        );
         let mut request = self.request(request_id);
         require!(
             request.status == RequestStatus::Pending,
