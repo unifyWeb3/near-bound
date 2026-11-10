@@ -119,3 +119,45 @@ fn a_request_made_before_the_freeze_is_refused_after_the_freeze() {
     let outcome = approve(&mut contract, request_id);
     assert!(outcome.approved);
 }
+
+/// F-03. An agent that already has a policy cannot be registered again.
+#[test]
+fn registering_an_agent_twice_is_refused() {
+    let mut contract = setup();
+    call_as(account(OWNER));
+    let refused = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        contract.register_agent(
+            account(AGENT),
+            BUDGET,
+            3600,
+            vec![account(VENDOR)],
+            MAX_SINGLE_SPEND,
+            RATE_LIMIT,
+        )
+    }))
+    .is_err();
+    assert!(refused, "a live agent must not be registered again");
+}
+
+/// F-03. Changing the limits keeps the counters of the agent.
+#[test]
+fn changing_the_limits_keeps_the_counters() {
+    let mut contract = setup();
+    let request_id = ask(&mut contract, 100, 1, "counts");
+    call_as(account(OWNER));
+    contract.approve_request(request_id);
+    let before = contract.get_policy(account(AGENT));
+
+    call_as(account(OWNER));
+    contract.set_budget(account(AGENT), 5_000);
+    contract.set_max_single_spend(account(AGENT), 2_000);
+    contract.set_rate_limit(account(AGENT), 9);
+    let after = contract.get_policy(account(AGENT));
+
+    assert_eq!(after.budget, 5_000);
+    assert_eq!(after.max_single_spend, 2_000);
+    assert_eq!(after.rate_limit, 9);
+    assert_eq!(after.spent, before.spent);
+    assert_eq!(after.last_nonce, before.last_nonce);
+    assert_eq!(after.request_count, before.request_count);
+}

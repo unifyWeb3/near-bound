@@ -87,6 +87,12 @@ impl Bound {
     /// The budget is the most the agent may spend in one period. The vendors
     /// list is the allowlist of receivers. An empty list allows any receiver,
     /// which is a weaker policy and the app says so.
+    ///
+    /// An agent that already has a policy cannot be registered again, because
+    /// registering writes a fresh policy and that would wipe the spend, the
+    /// nonce and the request count of a live agent. To change the limits of a
+    /// live agent use `set_budget`, `set_max_single_spend`, `set_vendors`,
+    /// `set_rate_limit` and `set_revoked`, which all keep the counters.
     pub fn register_agent(
         &mut self,
         agent_id: AccountId,
@@ -97,6 +103,10 @@ impl Bound {
         rate_limit: u64,
     ) {
         self.only_owner();
+        require!(
+            self.policies.get(&agent_id).is_none(),
+            "that agent already has a policy, change the limits instead of registering it again"
+        );
         require!(budget > 0, "the budget must be more than zero");
         require!(period_seconds > 0, "the period must be longer than zero");
         require!(rate_limit > 0, "the rate limit must be more than zero");
@@ -132,11 +142,39 @@ impl Bound {
     }
 
     /// Replace the period budget. Owner only.
+    ///
+    /// The counters of the agent are left alone, so the spend, the nonce and
+    /// the request count of the period carry over to the new budget.
     pub fn set_budget(&mut self, agent_id: AccountId, budget: u128) {
         self.only_owner();
         require!(budget > 0, "the budget must be more than zero");
         let mut policy = self.policy(&agent_id);
         policy.budget = budget;
+        self.policies.insert(&agent_id, &policy);
+    }
+
+    /// Replace the cap on one payment. Owner only.
+    ///
+    /// The counters of the agent are left alone.
+    pub fn set_max_single_spend(&mut self, agent_id: AccountId, max_single_spend: u128) {
+        self.only_owner();
+        require!(
+            max_single_spend > 0,
+            "the single spend limit must be more than zero"
+        );
+        let mut policy = self.policy(&agent_id);
+        policy.max_single_spend = max_single_spend;
+        self.policies.insert(&agent_id, &policy);
+    }
+
+    /// Replace the number of payments allowed in one minute. Owner only.
+    ///
+    /// The counters of the agent are left alone.
+    pub fn set_rate_limit(&mut self, agent_id: AccountId, rate_limit: u64) {
+        self.only_owner();
+        require!(rate_limit > 0, "the rate limit must be more than zero");
+        let mut policy = self.policy(&agent_id);
+        policy.rate_limit = rate_limit;
         self.policies.insert(&agent_id, &policy);
     }
 
