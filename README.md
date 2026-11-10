@@ -55,7 +55,7 @@ The treasury is inside the contract. The agent's key cannot attach a deposit, an
 
 <https://youtu.be/E9JbF9TlKs4>
 
-Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-11 the chain shows 21 receipts, 12 of them denials, and the policy is 5 NEAR an hour.
+Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-11 the chain shows 23 receipts, 14 of them denials, and the policy is 5 NEAR an hour.
 
 The demo post on X, published at NEAR HACKATHON: <https://x.com/oxunify/status/2120085871852478803>
 
@@ -90,7 +90,7 @@ The budget is checked again at the moment the owner approves, not only when the 
 
 The denial reasons, exactly as the policy engine returns them: `AgentRevoked`, `InvalidAmount`, `NonceReplay`, `CounterpartyBlocked`, `VendorNotAllowed`, `SingleSpendExceeded`, `RateLimited`, `BudgetExceeded`, `KillSwitch`.
 
-Denials are first class. 12 of the 21 receipts on chain at 2026-11-11 are denials. If you want to see the policy refuse something, it is already there.
+Denials are first class. 14 of the 23 receipts on chain at 2026-11-11 are denials. If you want to see the policy refuse something, it is already there.
 
 ## How to read a receipt
 
@@ -109,7 +109,7 @@ A receipt is written once and it is never changed afterwards.
 | Contract and treasury | `bound-testnet-97685.testnet` |
 | Agent | `bound-agent.testnet` |
 | Vendor | `bound-vendor.testnet` |
-| Receipts at 2026-11-11 | 21, 12 of them denials, 1 a failed transfer |
+| Receipts at 2026-11-11 | 23, 14 of them denials, 1 a failed transfer |
 | Live policy | 5 NEAR an hour, 1 NEAR a payment, 5 payments a minute, one vendor |
 
 Three receipts show the contract doing the work, and each one is a
@@ -138,7 +138,7 @@ The second command prints `reason: BudgetExceeded` and the rule "the spend would
 Do X, see Y:
 
 1. Open the nearblocks link above. See the contract deployment and the transactions on chain.
-2. Run the two read commands. See `21`, then see receipt 10 with `BudgetExceeded`.
+2. Run the two read commands. See `23`, then see receipt 10 with `BudgetExceeded`.
 3. Run the test suites:
 
 ```bash
