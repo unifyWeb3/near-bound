@@ -59,22 +59,22 @@ const STEPS = [
   {
     title: 'Deploy the policy contract and the vendor',
     body: 'Two wasm files, built from the repository. The contract holds the money and the rules. The vendor is a paid API stand in for the demo.',
-    cmd: 'cargo near build non-reproducible-wasm --manifest-path contract/Cargo.toml\ncargo near build non-reproducible-wasm --manifest-path demo/vendor/Cargo.toml\nnear contract deploy OWNER use-file contract/target/near/bound_contract.wasm with-init-call new json-args \'{}\' prepaid-gas \'100.0 Tgas\' attached-deposit \'0 NEAR\' network-config testnet sign-with-legacy-keychain send',
+    cmd: "cargo near build --manifest-path contract/Cargo.toml\ncargo near build --manifest-path demo/vendor/Cargo.toml\nnear contract deploy OWNER use-file contract/target/near/bound_contract.wasm with-init-call new json-args '{}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send",
   },
   {
     title: 'Register the agent with a policy',
-    body: 'Budget, single spend cap, rate limit per minute and the vendor allowlist. One command, one transaction, signed by the owner.',
-    cmd: 'near contract call-function as-transaction OWNER register_agent json-args \'{"agent_id":"AGENT","budget":50000000000000000,"period_seconds":3600,"vendors":["VENDOR"],"max_single_spend":20000000000000000,"rate_limit":5}\' prepaid-gas \'100.0 Tgas\' attached-deposit \'0 NEAR\' sign-as OWNER network-config testnet sign-with-legacy-keychain send',
+    body: 'Budget, single spend cap, rate limit per minute and the vendor allowlist. One command, one transaction, signed by the owner. The amounts go in as base64 because the CLI turns a big JSON number into a float.',
+    cmd: 'near contract call-function as-transaction OWNER register_agent base64-args "$(printf \'{"agent_id":"AGENT","budget":5000000000000000000000000,"period_seconds":3600,"vendors":["VENDOR"],"max_single_spend":1000000000000000000000000,"rate_limit":5}\' | base64 -w0)" prepaid-gas \'100.0 Tgas\' attached-deposit \'0 NEAR\' sign-as OWNER network-config testnet sign-with-legacy-keychain send',
   },
   {
     title: 'Give the agent a scoped key',
-    body: 'One receiver, one method, a gas cap. The key cannot call the vendor, cannot carry a deposit, and cannot afford an expensive call.',
+    body: 'One receiver, one method, a gas cap. The key cannot call the vendor, cannot carry a deposit, and cannot afford an expensive call. Give the agent a little NEAR for gas as well, the CLI checks the balance before it sends.',
     cmd: 'near account add-key AGENT grant-function-call-access --allowance 0.2near --contract-account-id OWNER --function-names request_spend autogenerate-new-keypair --signature-scheme ed25519 save-to-legacy-keychain network-config testnet sign-with-legacy-keychain send',
   },
   {
     title: 'The agent asks to spend',
     body: 'Hard checks run inside the contract. A stranger, a budget breach or a rate breach is written as a denial with evidence, never silently accepted.',
-    cmd: 'near contract call-function as-transaction OWNER request_spend json-args \'{"agent_id":"AGENT","vendor":"VENDOR","amount":20000000000000000,"nonce":1,"memo":"reference price lookup"}\' prepaid-gas \'20.0 Tgas\' attached-deposit \'0 NEAR\' sign-as AGENT network-config testnet sign-with-access-key-file KEY send',
+    cmd: 'near contract call-function as-transaction OWNER request_spend base64-args "$(printf \'{"agent_id":"AGENT","vendor":"VENDOR","amount":1000000000000000000000000,"nonce":1,"memo":"reference price lookup"}\' | base64 -w0)" prepaid-gas \'20.0 Tgas\' attached-deposit \'0 NEAR\' sign-as AGENT network-config testnet sign-with-access-key-file KEY send',
   },
   {
     title: 'The owner approves, money moves, receipt exists',

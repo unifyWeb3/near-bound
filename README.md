@@ -54,7 +54,7 @@ The treasury is inside the contract. The agent's key cannot attach a deposit, an
 
 <https://youtu.be/E9JbF9TlKs4>
 
-Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-10 the chain shows 12 receipts, 7 of them denials.
+Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-11 the chain shows 21 receipts, 12 of them denials.
 
 The demo post on X, published at NEAR HACKATHON: <https://x.com/oxunify/status/2120085871852478803>
 
@@ -89,7 +89,7 @@ The budget is checked again at the moment the owner approves, not only when the 
 
 The denial reasons, exactly as the policy engine returns them: `AgentRevoked`, `InvalidAmount`, `NonceReplay`, `CounterpartyBlocked`, `VendorNotAllowed`, `SingleSpendExceeded`, `RateLimited`, `BudgetExceeded`, `KillSwitch`.
 
-Denials are first class. 7 of the 12 receipts on chain at 2026-11-10 are denials. If you want to see the policy refuse something, it is already there.
+Denials are first class. 12 of the 21 receipts on chain at 2026-11-11 are denials. If you want to see the policy refuse something, it is already there.
 
 ## How to read a receipt
 
@@ -108,7 +108,17 @@ A receipt is written once and it is never changed afterwards.
 | Contract and treasury | `bound-testnet-97685.testnet` |
 | Agent | `bound-agent.testnet` |
 | Vendor | `bound-vendor.testnet` |
-| Receipts at 2026-11-10 | 12 |
+| Receipts at 2026-11-11 | 21, 12 of them denials, 1 a failed transfer |
+| Live policy | 5 NEAR an hour, 1 NEAR a payment, 5 payments a minute, one vendor |
+
+Three receipts show the contract doing the work, and each one is a
+transaction anybody can read:
+
+| Receipt | What it shows |
+| --- | --- |
+| 10 | The policy refused a spend over the period budget, with the figures in the evidence |
+| 18 | The owner approved, the transfer to a vendor that does not exist failed, and the reserved budget came back. `outcome` is `Failed` |
+| 20 | Two requests of 1 NEAR were made before anything was approved. The first approval took the money and the second was refused, so the two together never went over the budget |
 
 Every read in the console can be repeated with the read-only commands below. No wallet, no keys.
 
@@ -127,7 +137,7 @@ The second command prints `reason: BudgetExceeded` and the rule "the spend would
 Do X, see Y:
 
 1. Open the nearblocks link above. See the contract deployment and the transactions on chain.
-2. Run the two read commands. See `12`, then see receipt 10 with `BudgetExceeded`.
+2. Run the two read commands. See `21`, then see receipt 10 with `BudgetExceeded`.
 3. Run the test suites:
 
 ```bash
@@ -206,6 +216,25 @@ The console needs no build. Open `web/index.html` in a browser, or visit https:/
 - The agent's gas comes from its account. The key's allowance caps the gas it can burn, and the allowance belongs to the key: adding NEAR to the agent account does not give the key more gas.
 - The vendor allowlist and the blocklist are set by the owner. There is no shared blocklist that other agents can report to yet.
 - The contract cannot be upgraded in place. A fix needs a redeploy that carries the state over.
+- The NEAR CLI turns a JSON number bigger than 2^53 into a float, so a u128 amount has to go in as `base64-args`. The commands in the console show the form that works.
+
+## A note on the NEAR CLI
+
+The CLI reads `json-args` into a JSON value. An amount of 5 NEAR is
+`5000000000000000000000000`, which is bigger than 2^53, so the CLI hands it to
+the contract as `5e+24` and the call dies with a trap. `base64-args` carries
+the exact bytes:
+
+```bash
+near contract call-function as-transaction bound-testnet-97685.testnet set_budget \
+  base64-args "$(printf '{"agent_id":"bound-agent.testnet","budget":5000000000000000000000000}' | base64 -w0)" \
+  prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' \
+  sign-as bound-testnet-97685.testnet network-config testnet sign-with-legacy-keychain send
+```
+
+The CLI also checks the account balance before it sends, while the protocol
+charges a function call key's allowance. An agent with only a scoped key still
+needs a little NEAR of its own to make a call.
 
 This is one of two independent NEAR submissions by the same builder, the other is `keyhalt` at https://github.com/unifyWeb3/keyhalt. Built at NEAR HACKATHON.
 
