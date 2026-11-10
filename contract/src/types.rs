@@ -17,7 +17,7 @@ use near_sdk::{near, AccountId};
 /// The variants are appended, never inserted, so the borsh discriminants of
 /// the ones that are already stored on chain keep their values.
 #[near(serializers = [borsh, json])]
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum Outcome {
     /// The money moved.
     Approved,
@@ -33,7 +33,7 @@ pub enum Outcome {
 /// The variants are appended, never inserted, so the borsh discriminants of
 /// the ones that are already stored on chain keep their values.
 #[near(serializers = [borsh, json])]
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Debug)]
 pub enum RequestStatus {
     /// The agent asked, the hard checks passed, no decision has been made yet.
     Pending,

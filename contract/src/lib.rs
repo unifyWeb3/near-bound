@@ -441,7 +441,8 @@ impl Bound {
                 Self::ext_self()
                     .with_static_gas(near_sdk::Gas::from_tgas(10))
                     .on_transfer(request_id),
-            );
+            )
+            .detach();
 
         SpendOutcome {
             request_id,

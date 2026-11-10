@@ -10,7 +10,7 @@
 
 use super::*;
 use near_sdk::test_utils::VMContextBuilder;
-use near_sdk::{testing_env, MockedBlockchain, NearToken};
+use near_sdk::{MockedBlockchain, NearToken};
 
 /// The block timestamp the tests run at, in nanoseconds.
 const NOW: u64 = 1_800_000_000_000_000_000;
@@ -377,7 +377,7 @@ fn only_the_agent_may_ask_for_a_spend() {
             100,
             1,
             "not the agent".to_string(),
-        )
+        );
     });
     assert!(refused, "only the agent may ask for a spend for itself");
 }
@@ -389,7 +389,7 @@ fn the_agent_cannot_approve_its_own_request() {
     let request_id = ask(&mut contract, 100, 1, "self approval");
     call_as(account(AGENT));
     let refused = panics(|| {
-        contract.approve_request(request_id)
+        let _ = contract.approve_request(request_id);
     });
     assert!(refused, "the agent must not approve its own request");
 }
@@ -400,7 +400,7 @@ fn only_the_owner_may_change_the_policy() {
     let mut contract = setup();
     call_as(account(AGENT));
     let refused = panics(|| {
-        contract.set_budget(account(AGENT), 10_000)
+        let _ = contract.set_budget(account(AGENT), 10_000);
     });
     assert!(refused, "only the owner may change the budget");
 }
