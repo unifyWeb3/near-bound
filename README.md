@@ -23,6 +23,7 @@ An AI agent that pays for API or compute credits carries a credential with money
 - [On-chain, verified](#on-chain-verified)
 - [Verify it yourself](#verify-it-yourself)
 - [What's real, what isn't](#whats-real-what-isnt)
+- [Known limitations](#known-limitations)
 - [Engineering decisions](#engineering-decisions)
 - [Tech stack](#tech-stack)
 - [Project layout](#project-layout)
@@ -45,7 +46,7 @@ SpendGuard is a NEAR contract that holds the money and the rules for a paid AI a
 1. I set the rules on chain: a budget per period, a vendor allowlist, a per-spend cap, a rate limit, and a revoke switch.
 2. The agent gets a function call access key scoped to one method, `request_spend`, on one contract, with a gas allowance. The key cannot carry a deposit, cannot call another receiver, and cannot afford a call it wasn't budgeted for.
 3. When the agent asks, the contract checks the rules at that moment. Break one, and the contract writes a denial receipt with the rule in plain words and the evidence. Pass, and the request waits for a human.
-4. The owner approves. The contract moves the funds and writes a receipt. Approved or denied, every decision is a transaction anyone can read.
+4. The owner approves. The contract reserves the budget, moves the funds, and writes the receipt when the transfer settles. Approved, denied or failed, every decision is a transaction anyone can read.
 5. The console at https://spendguard-oxunify.vercel.app reads the receipts from the public testnet RPC. No backend, no database, nothing to trust.
 
 The treasury is inside the contract. The agent's key cannot attach a deposit, and every payment is decided there.
@@ -54,7 +55,7 @@ The treasury is inside the contract. The agent's key cannot attach a deposit, an
 
 <https://youtu.be/E9JbF9TlKs4>
 
-Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-11 the chain shows 21 receipts, 12 of them denials.
+Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-11 the chain shows 21 receipts, 12 of them denials, and the policy is 5 NEAR an hour.
 
 The demo post on X, published at NEAR HACKATHON: <https://x.com/oxunify/status/2120085871852478803>
 
@@ -80,7 +81,7 @@ The request loop:
 1. The agent signs `request_spend` with its scoped key. Only the agent itself may call it for itself.
 2. The contract runs the hard checks: kill switch, revoked agent, zero amount, replayed nonce, blocked receiver, vendor allowlist, single spend cap, rate limit, period budget.
 3. A failure writes a receipt with the reason, the rule and the evidence. The money does not move.
-4. A pass stores the request as Pending. The runner or the owner reviews it. A flagged request escalates to the owner.
+4. A pass stores the request as Pending. The owner reviews it, or the runner the owner named. A flagged request escalates to the owner.
 5. The owner approves. The contract reserves the budget, moves the funds, and writes the receipt when the transfer settles, so a receipt never says the money moved when it did not. A transfer that fails gives the budget back and its receipt says the transfer did not go through.
 
 The owner can freeze every agent with one call. While the freeze is on no request is accepted and no request can be approved, including one the agent asked for before the freeze.
@@ -185,6 +186,7 @@ Things this does not do, in the open:
 - There is no counterparty check service. The owner sets the blocklist and the vendor allowlist, and the policy engine reads them. The track prompt for this lane asks for a check that scores the receiver on account age, whether it is a contract and whether its code changed, the prior interactions with it, and a blocklist other agents can report to. None of that is built. The account age needs an indexer rather than the RPC, and a shared blocklist would change the state layout of a contract that is already live.
 - The contract cannot be upgraded in place. It has no migrate method, so a fix needs a redeploy that carries the state over. One has already been done, on 2026-11-05, and it kept every receipt.
 - The receipts are never pruned. Every decision is kept forever, and the contract pays for the storage.
+- The runner and the owner are the same account on testnet, so there is no second reviewer yet. The contract supports a separate runner account.
 - The demo vendor contract counts the deposit it was given rather than the price it kept, so its `taken` figure is too high.
 - The NEAR CLI is the operator side, so there is no browser wallet and no revoke button.
 
