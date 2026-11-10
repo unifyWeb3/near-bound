@@ -1,6 +1,4 @@
 target/
 .env
 *.log
-
-video/out/
-video/tools/
+video/
