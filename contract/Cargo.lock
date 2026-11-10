@@ -184,6 +184,7 @@ name = "bound-contract"
 version = "0.1.0"
 dependencies = [
  "bound-policy",
+ "near-parameters",
  "near-sdk",
 ]
 
