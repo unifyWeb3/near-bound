@@ -679,6 +679,12 @@ button:disabled {
   border-color: rgba(147, 54, 44, 0.3);
 }
 
+.pill.failed {
+  color: var(--ink-2);
+  background: var(--panel-2);
+  border-color: rgba(28, 26, 21, 0.25);
+}
+
 .decision-id {
   font-family: var(--mono);
   font-size: 12px;

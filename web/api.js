@@ -14,6 +14,15 @@ export const CONFIG = {
   explorer: 'https://testnet.nearblocks.io',
 };
 
+/** How long one RPC call may take before it is given up on. */
+const RPC_TIMEOUT_MS = 10000;
+
+/** How many times a call is tried before the page gives up on it. */
+const RPC_ATTEMPTS = 2;
+
+/** How many receipt reads run at the same time. */
+const READ_BATCH = 5;
+
 /**
  * Parse JSON while keeping u128 amounts exact.
  *
@@ -25,6 +34,35 @@ export const CONFIG = {
  */
 export function parseBigJson(text) {
   return JSON.parse(text.replace(/:(\s*)(-?\d{16,})(?=\s*[,}\]])/g, ':$1"$2"'));
+}
+
+/**
+ * Send one JSON-RPC request, with a timeout and one retry.
+ *
+ * Without the timeout a stalled RPC leaves the page on "Reading..." forever.
+ *
+ * @param {object} body
+ */
+async function rpcCall(body) {
+  let lastError;
+  for (let attempt = 0; attempt < RPC_ATTEMPTS; attempt += 1) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
+    try {
+      const response = await fetch(CONFIG.rpc, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  throw lastError;
 }
 
 /**
@@ -48,12 +86,7 @@ export async function viewFunction(contract, method, args = {}) {
       finality: 'optimistic',
     },
   };
-  const response = await fetch(CONFIG.rpc, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  const json = await response.json();
+  const json = await rpcCall(body);
   if (json.error) {
     const name = json.error.cause?.name ?? json.error.name ?? 'RPC error';
     const info = json.error.cause?.info ?? json.error.data ?? '';
@@ -147,21 +180,32 @@ export function getKillSwitch() {
 /**
  * Read every receipt, newest first, for the demo agent.
  *
- * Returns both the receipts that could be read and the number of calls that
- * failed, so the page can say it is showing a partial ledger instead of
- * printing a confident lie when the RPC drops a call.
+ * The reads run a few at a time so a page open does not queue one call
+ * behind the other. Returns both the receipts that could be read and the
+ * number of calls that failed, so the page can say it is showing a partial
+ * ledger instead of printing a confident lie when the RPC drops a call.
  */
 export async function getReceipts() {
   const count = await viewFunction(CONFIG.contract, 'get_receipt_count', {});
   const total = Number(count);
   const receipts = [];
   let errors = 0;
-  for (let id = 0; id < total; id += 1) {
-    try {
-      const receipt = await viewFunction(CONFIG.contract, 'get_receipt', { receipt_id: id });
-      if (receipt.agent_id === CONFIG.agent) receipts.push(receipt);
-    } catch {
-      errors += 1;
+  const ids = [];
+  for (let id = 0; id < total; id += 1) ids.push(id);
+  for (let start = 0; start < ids.length; start += READ_BATCH) {
+    const batch = ids.slice(start, start + READ_BATCH);
+    const read = await Promise.all(
+      batch.map(async (id) => {
+        try {
+          return await viewFunction(CONFIG.contract, 'get_receipt', { receipt_id: id });
+        } catch {
+          errors += 1;
+          return null;
+        }
+      }),
+    );
+    for (const receipt of read) {
+      if (receipt && receipt.agent_id === CONFIG.agent) receipts.push(receipt);
     }
   }
   return {
@@ -200,7 +244,13 @@ export async function loadState(limit = 20) {
   };
 }
 
-/** The exact strings the protocol returns when the agent key is misused. */
+/**
+ * The exact strings the protocol returns when the agent key is misused.
+ *
+ * These are the nearcore messages for the four refusals the protocol makes
+ * before the contract is reached. The script demo/protocol_arm.sh runs them
+ * and the console shows them as a transcript of that run.
+ */
 export const PROTOCOL_CHECKS = [
   {
     title: 'Wrong method',

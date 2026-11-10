@@ -127,7 +127,7 @@
       <section class="section split" id="feed">
         <div class="panel feed-panel">
           <h2 class="section-title">The decision feed <span class="count" id="feed-count"></span></h2>
-          <div id="feed-list" class="feed"></div>
+          <div id="feed-list" class="feed" aria-live="polite"></div>
         </div>
 
         <div class="side-col">
@@ -139,6 +139,7 @@
           </div>
           <div class="panel key-panel">
             <h3 class="panel-title">The agent key cannot do this</h3>
+            <p class="muted small">The four refusals the protocol makes, captured by demo/protocol_arm.sh.</p>
             <div id="protocol-list"></div>
           </div>
         </div>

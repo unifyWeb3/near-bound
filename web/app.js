@@ -1,6 +1,5 @@
 import {
   CONFIG,
-  PROTOCOL_CHECKS,
   formatNear,
   loadState,
   timestampSeconds,
@@ -29,11 +28,12 @@ function formatCount(value) {
   return Number.isFinite(n) ? n.toLocaleString('en-US') : String(value);
 }
 
-/** Group receipts by day label. */
+/** Group receipts by day label, in the reader's own timezone. */
 function byDay(receipts) {
   const groups = new Map();
   for (const r of receipts) {
-    const key = new Date(timestampSeconds(r.created_at) * 1000).toISOString().slice(0, 10);
+    const date = new Date(timestampSeconds(r.created_at) * 1000);
+    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
     groups.set(key, (groups.get(key) ?? 0) + 1);
   }
   return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
@@ -120,6 +120,7 @@ function renderHero(state) {
 function renderStats(state) {
   const { policy, receipts, totalReceipts } = state;
   const denied = count(receipts, (r) => r.outcome === 'Denied');
+  const failed = count(receipts, (r) => r.outcome === 'Failed');
   const approved = count(receipts, (r) => r.outcome === 'Approved');
   const allowedValue = sumYocto(receipts, (r) => (r.outcome === 'Approved' ? r.amount : 0n));
   const protectedValue = sumYocto(receipts, (r) => (r.outcome === 'Denied' ? r.amount : 0n));
@@ -127,10 +128,10 @@ function renderStats(state) {
   const buttons = [
     ['Under management', formatNear(state.treasury), 'held by the contract'],
     ['Approved', formatCount(approved), 'reads on chain'],
-    ['Blocked', formatCount(denied), 'never paid out'],
+    ['Blocked', formatCount(denied + failed), 'never paid out'],
     ['Allowed value', formatNear(allowedValue), 'total that settled'],
     ['Protected value', formatNear(protectedValue), 'refused by the policy'],
-    ['Decisions', formatCount(totalReceipts), 'every one receipted'],
+    ['Decisions', formatCount(totalReceipts), 'for this agent'],
   ];
 
   const host = $('stats-grid');
@@ -188,7 +189,9 @@ function renderCharts(state) {
 
 /** One receipt card. */
 function receiptPill(outcome) {
-  return outcome === 'Approved' ? 'pill approved' : 'pill denied';
+  if (outcome === 'Approved') return 'pill approved';
+  if (outcome === 'Failed') return 'pill failed';
+  return 'pill denied';
 }
 
 function renderReceipt(receipt) {
@@ -319,7 +322,7 @@ async function refresh() {
     renderCharts(state);
     renderFeed(state);
     lastGood = state;
-    $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}`;
+    $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.chainReceipts} receipts on chain`;
     const partial = (state.receiptErrors ?? 0) > 0;
     $('error-bar').hidden = !partial;
     $('error-bar').textContent = partial
@@ -343,10 +346,28 @@ async function refresh() {
   } finally {
     button.disabled = false;
     button.textContent = 'Refresh';
-    if (timer) clearTimeout(timer);
-    timer = setTimeout(refresh, 30000);
+    scheduleNext();
   }
 }
+
+/** Line up the next read of the chain. */
+function scheduleNext() {
+  if (timer) clearTimeout(timer);
+  timer = setTimeout(() => {
+    // A tab nobody is looking at does not need to keep reading the chain.
+    if (document.hidden) {
+      scheduleNext();
+      return;
+    }
+    refresh();
+  }, 60000);
+}
+
+// When the tab comes back, read the chain again if the page has gone stale.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (!lastGood || Date.now() - lastGood.loadedAt.getTime() > 60000) refresh();
+});
 
 $('refresh').addEventListener('click', refresh);
 renderEnable();
