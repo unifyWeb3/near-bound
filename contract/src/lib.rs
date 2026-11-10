@@ -10,10 +10,13 @@
 /// harness in JavaScript.
 
 use near_sdk::collections::{LookupMap, LookupSet};
-use near_sdk::{near, AccountId, NearToken};
+use near_sdk::{near, AccountId, NearToken, PromiseError};
 use near_sdk::require;
 
 mod types;
+
+#[cfg(test)]
+mod tests;
 
 pub use bound_policy::Evaluation;
 pub use bound_policy::Policy;
@@ -340,7 +343,14 @@ impl Bound {
 
     /// Move the money. The owner and the runner may do this.
     ///
-    /// While the owner has frozen every agent no request can be approved.
+    /// The policy is checked again here, at the moment of approval, and not
+    /// only when the agent asked. That is what stops two approvals from going
+    /// over the budget together: the second one reads the spend the first
+    /// one reserved.
+    ///
+    /// The budget is reserved now, the transfer runs after this call, and the
+    /// receipt is written when the transfer settles. A receipt is written
+    /// once and it never says the money moved when it did not.
     pub fn approve_request(&mut self, request_id: u64) -> SpendOutcome {
         self.only_owner_or_runner();
         require!(
@@ -405,6 +415,8 @@ impl Bound {
             "the contract does not hold enough for this spend"
         );
 
+        // Reserve the budget now, so a second approval cannot spend the same
+        // money twice. The reservation is given back if the transfer fails.
         policy.period_start = decision.period_start;
         policy.spent = decision.spent;
         policy.last_nonce = request.nonce;
@@ -413,24 +425,7 @@ impl Bound {
         policy.rate_count = count + 1;
         self.policies.insert(&request.agent_id, &policy);
 
-        let receipt = self.write_receipt(
-            &request.agent_id,
-            &request.vendor,
-            request.amount,
-            request.nonce,
-            &request.memo,
-            request.request_id,
-            Outcome::Approved,
-            "",
-            "every policy check passed and the counterparty check approved",
-            &[],
-            decision.period_start,
-            policy.spent,
-            policy.budget.saturating_sub(policy.spent),
-        );
-
-        request.status = RequestStatus::Approved;
-        request.receipt_id = Some(receipt.receipt_id);
+        request.status = RequestStatus::ApprovedPending;
         self.requests.insert(&request_id, &request);
 
         near_sdk::env::log_str(&format!(
@@ -438,17 +433,118 @@ impl Bound {
             request.agent_id, request.vendor, request.amount
         ));
 
-        let _ = near_sdk::Promise::new(request.vendor.clone())
-            .transfer(NearToken::from_yoctonear(request.amount));
+        // The transfer runs after this call. The callback settles it and
+        // writes the receipt.
+        near_sdk::Promise::new(request.vendor.clone())
+            .transfer(NearToken::from_yoctonear(request.amount))
+            .then(
+                Self::ext_self()
+                    .with_static_gas(near_sdk::Gas::from_tgas(10))
+                    .on_transfer(request_id),
+            );
 
         SpendOutcome {
             request_id,
             approved: true,
             reason: String::new(),
-            rule: "every policy check passed and the counterparty check approved".to_string(),
+            rule: "every policy check passed and the counterparty check approved, the receipt is written when the transfer settles"
+                .to_string(),
             evidence: Vec::new(),
-            spent: receipt.spent_after,
-            remaining: receipt.remaining_after,
+            spent: policy.spent,
+            remaining: policy.budget.saturating_sub(policy.spent),
+        }
+    }
+
+    /// Settle an approved request after the transfer. Only the contract calls
+    /// this.
+    ///
+    /// The receipt is written here, when the outcome of the transfer is
+    /// known, so it can never claim the money moved when it did not. If the
+    /// transfer failed the reserved budget is given back and the receipt says
+    /// the transfer did not go through.
+    #[private]
+    pub fn on_transfer(
+        &mut self,
+        request_id: u64,
+        #[callback_result] result: Result<(), PromiseError>,
+    ) {
+        let mut request = match self.requests.get(&request_id) {
+            Some(request) => request,
+            None => return,
+        };
+        if request.status != RequestStatus::ApprovedPending {
+            return;
+        }
+
+        let mut policy = match self.policies.get(&request.agent_id) {
+            Some(policy) => policy,
+            None => return,
+        };
+
+        match result {
+            Ok(()) => {
+                // The money moved. The reservation stands and becomes the
+                // spend of the period.
+                let spent_after = self.spent_after_settlement(&request.agent_id, request_id, &policy);
+                let remaining_after = policy.budget.saturating_sub(spent_after);
+                request.status = RequestStatus::Approved;
+                let receipt = self.write_receipt(
+                    &request.agent_id,
+                    &request.vendor,
+                    request.amount,
+                    request.nonce,
+                    &request.memo,
+                    request.request_id,
+                    Outcome::Approved,
+                    "",
+                    "every policy check passed and the counterparty check approved",
+                    &[],
+                    policy.period_start,
+                    spent_after,
+                    remaining_after,
+                );
+                request.receipt_id = Some(receipt.receipt_id);
+                self.requests.insert(&request_id, &request);
+                near_sdk::env::log_str(&format!(
+                    "SpendSettled {} {} {}",
+                    request.agent_id, request.vendor, request.amount
+                ));
+            }
+            Err(error) => {
+                // The transfer did not go through. Give the reserved budget
+                // back, so a failed payment never eats into the period.
+                let now = now_seconds();
+                let (period_start, _) = bound_policy::roll_period(&policy, now);
+                if period_start == policy.period_start {
+                    policy.spent = policy.spent.saturating_sub(request.amount);
+                }
+                self.policies.insert(&request.agent_id, &policy);
+
+                let spent_after = self.spent_after_settlement(&request.agent_id, request_id, &policy);
+                let remaining_after = policy.budget.saturating_sub(spent_after);
+                request.status = RequestStatus::SettlementFailed;
+                let receipt = self.write_receipt(
+                    &request.agent_id,
+                    &request.vendor,
+                    request.amount,
+                    request.nonce,
+                    &request.memo,
+                    request.request_id,
+                    Outcome::Failed,
+                    "TransferFailed",
+                    "the transfer did not go through and the budget was given back",
+                    &[format!("the transfer failed with {}", error)],
+                    policy.period_start,
+                    spent_after,
+                    remaining_after,
+                );
+                request.receipt_id = Some(receipt.receipt_id);
+                self.requests.insert(&request_id, &request);
+                near_sdk::env::log_str(&format!(
+                    "SpendSettlementFailed {} {} {}",
+                    request.agent_id, request.vendor, request.amount
+                ));
+            }
         }
     }
 
@@ -647,6 +743,32 @@ impl Bound {
         self.requests
             .get(&request_id)
             .unwrap_or_else(|| panic!("no request with that id"))
+    }
+
+    /// The spend of the period after a payment settled.
+    ///
+    /// A payment that was approved but has not settled yet is reserved in the
+    /// budget, so it is taken out of the figure. Two payments that overlap
+    /// are rare, and when they happen the figure is exact as long as they
+    /// settle in the order they were approved.
+    fn spent_after_settlement(
+        &self,
+        agent_id: &AccountId,
+        request_id: u64,
+        policy: &Policy,
+    ) -> u128 {
+        let mut in_flight = 0u128;
+        for id in self.agent_requests.get(agent_id).unwrap_or_default() {
+            if id == request_id {
+                continue;
+            }
+            if let Some(other) = self.requests.get(&id) {
+                if other.status == RequestStatus::ApprovedPending {
+                    in_flight = in_flight.saturating_add(other.amount);
+                }
+            }
+        }
+        policy.spent.saturating_sub(in_flight)
     }
 
     #[allow(clippy::too_many_arguments)]

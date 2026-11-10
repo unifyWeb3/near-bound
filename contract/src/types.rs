@@ -3,10 +3,19 @@
 /// Every one of them is stored with Borsh, so the field order and the types
 /// are part of the contract's state layout. Changing them changes the state
 /// layout, so they only change before deployment.
+///
+/// The layouts of `Policy`, `Request` and `Receipt` are frozen: the contract
+/// is live on testnet and its state is already stored. New enum variants are
+/// appended, never inserted, because the borsh discriminant of an enum
+/// variant is its position and inserting one would change how the stored
+/// values decode.
 
 use near_sdk::{near, AccountId};
 
 /// The outcome of a spend attempt.
+///
+/// The variants are appended, never inserted, so the borsh discriminants of
+/// the ones that are already stored on chain keep their values.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, PartialEq, Eq)]
 pub enum Outcome {
@@ -14,9 +23,15 @@ pub enum Outcome {
     Approved,
     /// The money did not move.
     Denied,
+    /// The decision was made but the transfer did not go through, so no money
+    /// moved and the budget was given back.
+    Failed,
 }
 
 /// Where a request is in its life cycle.
+///
+/// The variants are appended, never inserted, so the borsh discriminants of
+/// the ones that are already stored on chain keep their values.
 #[near(serializers = [borsh, json])]
 #[derive(Clone, PartialEq, Eq)]
 pub enum RequestStatus {
@@ -28,6 +43,12 @@ pub enum RequestStatus {
     Approved,
     /// The money did not move.
     Denied,
+    /// The owner approved and the transfer is in flight. The receipt is
+    /// written when the transfer settles.
+    ApprovedPending,
+    /// The owner approved but the transfer did not go through. The budget was
+    /// given back and the receipt says so.
+    SettlementFailed,
 }
 
 /// One request for a spend.
