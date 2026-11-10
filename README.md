@@ -68,8 +68,9 @@ flowchart LR
   P --> R[Runner or owner review]
   R -->|flag| N[NeedsApproval]
   R -->|reject| RJ[Receipt: Denied]
-  R -->|approve| T[Contract moves funds]
-  T --> AP[Receipt: Approved]
+  R -->|approve| T[Contract reserves the budget and moves the funds]
+  T --> AP[Receipt: Approved, written when it settles]
+  T --> AF[Receipt: Failed, the budget is given back]
   N -->|owner approves| T
   N -->|owner rejects| RJ
 ```
@@ -80,11 +81,25 @@ The request loop:
 2. The contract runs the hard checks: kill switch, revoked agent, zero amount, replayed nonce, blocked receiver, vendor allowlist, single spend cap, rate limit, period budget.
 3. A failure writes a receipt with the reason, the rule and the evidence. The money does not move.
 4. A pass stores the request as Pending. The runner or the owner reviews it. A flagged request escalates to the owner.
-5. Approval moves the funds and writes a receipt with `spent_after` and `remaining_after`.
+5. The owner approves. The contract reserves the budget, moves the funds, and writes the receipt when the transfer settles, so a receipt never says the money moved when it did not. A transfer that fails gives the budget back and its receipt says the transfer did not go through.
+
+The owner can freeze every agent with one call. While the freeze is on no request is accepted and no request can be approved, including one the agent asked for before the freeze.
+
+The budget is checked again at the moment the owner approves, not only when the agent asks, so two approvals in the same period cannot go over the budget together.
 
 The denial reasons, exactly as the policy engine returns them: `AgentRevoked`, `InvalidAmount`, `NonceReplay`, `CounterpartyBlocked`, `VendorNotAllowed`, `SingleSpendExceeded`, `RateLimited`, `BudgetExceeded`, `KillSwitch`.
 
 Denials are first class. 7 of the 12 receipts on chain at 2026-11-10 are denials. If you want to see the policy refuse something, it is already there.
+
+## How to read a receipt
+
+A receipt is written once and it is never changed afterwards.
+
+| Outcome | What it means |
+| --- | --- |
+| `Denied` | The policy refused the request. No money moved and the budget was not touched. |
+| `Approved` | The owner approved, the transfer went through and the money moved. |
+| `Failed` | The owner approved but the transfer did not go through. The reserved budget was given back and the receipt says why. |
 
 ## On-chain, verified
 
@@ -95,7 +110,7 @@ Denials are first class. 7 of the 12 receipts on chain at 2026-11-10 are denials
 | Vendor | `bound-vendor.testnet` |
 | Receipts at 2026-11-10 | 12 |
 
-Every read in the console can be repeated with two read-only commands. No wallet, no keys.
+Every read in the console can be repeated with the read-only commands below. No wallet, no keys.
 
 ```bash
 near contract call-function as-read-only bound-testnet-97685.testnet \
@@ -105,7 +120,7 @@ near contract call-function as-read-only bound-testnet-97685.testnet \
   get_receipt json-args '{"receipt_id":10}' network-config testnet now
 ```
 
-The second command prints `reason: BudgetExceeded` and the rule "the spend would exceed the period budget". Read the live state on nearblocks at https://testnet.nearblocks.io/address/bound-testnet-97685.testnet.
+The second command prints `reason: BudgetExceeded` and the rule "the spend would exceed the period budget". The console's Judge evidence section has the curl form of these reads and of the two others it needs, the policy and the treasury. Read the live state on nearblocks at https://testnet.nearblocks.io/address/bound-testnet-97685.testnet.
 
 ## Verify it yourself
 
@@ -113,15 +128,15 @@ Do X, see Y:
 
 1. Open the nearblocks link above. See the contract deployment and the transactions on chain.
 2. Run the two read commands. See `12`, then see receipt 10 with `BudgetExceeded`.
-3. Run the policy test suite:
+3. Run the test suites:
 
 ```bash
 git clone https://github.com/unifyWeb3/near-bound.git
-cd near-bound/policy
-cargo test
+cd near-bound/policy && cargo test
+cd ../contract && cargo test
 ```
 
-See 17 tests pass. The suite covers the denial paths: over-budget, unknown vendor, single spend cap, rate limit, revoked agent, replayed nonce, zero amount, and the order of the blocklist check.
+See 17 policy tests pass, then 13 contract tests pass. The policy suite covers the denial paths: over-budget, unknown vendor, single spend cap, rate limit, revoked agent, replayed nonce, zero amount, and the order of the blocklist check. The contract suite covers who may call what, the kill switch stopping an approval, a transfer that settles, a transfer that fails, an agent that cannot be registered twice, and two approvals that cannot together go over the budget.
 
 4. Run the protocol arm against testnet. It needs an owner account and an agent account holding the scoped key.
 
@@ -147,6 +162,7 @@ See the PASS lines for a method the key cannot call, a receiver the key cannot c
 ## Engineering decisions
 
 - Gate before spend. The policy runs inside the contract before money moves. A denial is a receipt, not an error string.
+- The receipt is written when the money moves. The approval reserves the budget and the transfer settles in a callback, so a receipt can never say the money moved when it did not. No receipt is rewritten afterwards.
 - The protocol does the hard enforcement. A function call access key cannot carry a deposit, and it cannot be used outside its receiver and method names. The contract enforces the economic policy. Neither trusts the prompt.
 - Denials are first class citizens of the product. They carry the same rule and evidence as approvals.
 - The console refuses to lie. If the RPC fails, the page shows the last good view labelled stale instead of a number it cannot defend.
@@ -154,15 +170,15 @@ See the PASS lines for a method the key cannot call, a receiver the key cannot c
 
 ## Tech stack
 
-- Contract: Rust, near-sdk. Deployed at `bound-testnet-97685.testnet`.
-- Policy engine: pure Rust, dependency-free, unit tested.
+- Contract: Rust, near-sdk 5.30.0. Deployed at `bound-testnet-97685.testnet`.
+- Policy engine: pure Rust, one dependency (borsh), unit tested.
 - Console: vanilla JavaScript, static page, no build step.
 - Operator and demo flows: near-cli-rs on testnet.
 
 ## Project layout
 
 ```
-contract/     Bound contract, deployed on testnet
+contract/     Bound contract, deployed on testnet, unit tested
 policy/       Pure policy engine, unit tested
 demo/         Protocol arm script and the vendor stand-in
 web/          The SpendGuard console, a static page
@@ -187,7 +203,9 @@ The console needs no build. Open `web/index.html` in a browser, or visit https:/
 - The operator side is the command line, not a website.
 - It does not stop the agent from asking. It stops the agent from succeeding outside the policy.
 - The counterparty signals are local policy inputs, not live risk feeds.
-- The agent's gas comes from its account. The key's allowance caps the gas it can burn.
+- The agent's gas comes from its account. The key's allowance caps the gas it can burn, and the allowance belongs to the key: adding NEAR to the agent account does not give the key more gas.
+- The vendor allowlist and the blocklist are set by the owner. There is no shared blocklist that other agents can report to yet.
+- The contract cannot be upgraded in place. A fix needs a redeploy that carries the state over.
 
 This is one of two independent NEAR submissions by the same builder, the other is `keyhalt` at https://github.com/unifyWeb3/keyhalt. Built at NEAR HACKATHON.
 
