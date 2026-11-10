@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![NEAR](https://img.shields.io/badge/NEAR-testnet-00EC97.svg)](https://testnet.nearblocks.io/address/bound-testnet-97685.testnet)
 
-[Watch the demo](https://youtu.be/E9JbF9TlKs4) · [Live console](https://spendguard-oxunify.vercel.app/) · [How it works](#how-it-works) · [Verify it yourself](#verify-it-yourself)
+[Watch the demo](https://youtu.be/E9JbF9TlKs4) · [Demo post on X](https://x.com/oxunify/status/2120085871852478803) · [Live console](https://spendguard-oxunify.vercel.app/) · [How it works](#how-it-works) · [Verify it yourself](#verify-it-yourself)
 
 </div>
 
@@ -55,6 +55,8 @@ The treasury is inside the contract. The agent's key cannot attach a deposit, an
 <https://youtu.be/E9JbF9TlKs4>
 
 Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-10 the chain shows 12 receipts, 7 of them denials.
+
+The demo post on X, published at NEAR HACKATHON: <https://x.com/oxunify/status/2120085871852478803>
 
 ## How it works
 
