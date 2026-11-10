@@ -43,7 +43,7 @@
           </div>
           <ul class="proof">
             <li><strong>Real, not a demo.</strong> Every figure on this page is read from the chain.</li>
-            <li><strong>One transaction lockout.</strong> Delete the key and the agent can ask, but never be paid.</li>
+            <li><strong>One transaction lockout.</strong> Delete the key and the agent cannot sign a request at all.</li>
             <li><strong>No backend.</strong> Nothing to trust, nothing to leak, nothing to go down.</li>
           </ul>
         </div>
@@ -165,11 +165,11 @@
 
             <h3 class="panel-title">2. The denial, with evidence</h3>
             <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"'$(printf '{"receipt_id":10}' | base64 -w0)'","finality":"optimistic"}}'</pre>
-            <p class="muted small">Receipt 10: <code>VendorNotAllowed</code> and budget evidence lines.</p>
+            <p class="muted small">Receipt 10: <code>BudgetExceeded</code> and budget evidence lines.</p>
 
             <h3 class="panel-title">3. The treasury and the key</h3>
             <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_access_key_list","account_id":"bound-agent.testnet","finality":"optimistic"}}'</pre>
-            <p class="muted small">Shows the scoped key next to the full access key. Scope: one receiver, one method, an allowance.</p>
+            <p class="muted small">Shows the one key the agent can use. Scope: one receiver, one method, an allowance.</p>
 
             <h3 class="panel-title">4. Count the decisions</h3>
             <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}'</pre>
@@ -178,7 +178,7 @@
             <ul class="evidence-notes">
               <li>No database and no cache; the same numbers this page prints come from these calls.</li>
               <li>Receipts survive the redeploy on 2026-11-06; storage was untouched.</li>
-              <li>This repository is the evidence; code is MIT, Apache 2.0.</li>
+              <li>This repository is the evidence. Code is MIT.</li>
             </ul>
           </div>
         </details>
@@ -191,7 +191,6 @@
         <p>A hard limit the agent cannot argue with. Testnet only; no real money has moved.</p>
       </div>
       <div class="footer-links">
-        <a href="https://github.com/unifyWeb3/near-bound">bound repository</a>
         <a href="https://testnet.nearblocks.io/address/bound-testnet-97685.testnet" rel="noreferrer noopener">contract on nearblocks</a>
       </div>
       <div class="footer-note"><span>MIT licensed, built at NEAR Hackathon</span><span>Source at github.com/unifyWeb3/near-bound</span></div>

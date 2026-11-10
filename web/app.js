@@ -88,8 +88,8 @@ const STEPS = [
   },
   {
     title: 'Revoke the agent instantly',
-    body: 'Delete the scoped key. The agent may still ask, but the protocol refuses every call before the contract sees it.',
-    cmd: 'near account delete-key AGENT PUBLIC_KEY network-config testnet sign-with-legacy-keychain send',
+    body: 'Delete the scoped key. The agent cannot sign a request at all.',
+    cmd: 'near account delete-keys AGENT public-keys PUBLIC_KEY network-config testnet sign-with-legacy-keychain send',
   },
 ];
 

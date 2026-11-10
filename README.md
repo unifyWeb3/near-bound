@@ -28,7 +28,6 @@ An AI agent that pays for API or compute credits carries a credential with money
 - [Project layout](#project-layout)
 - [Run it locally](#run-it-locally)
 - [Limits](#limits)
-- [Independence and disclosure](#independence-and-disclosure)
 - [Licence](#licence)
 
 ## The problem I set out to solve
@@ -188,9 +187,7 @@ The console needs no build. Open `web/index.html` in a browser, or visit https:/
 - The counterparty signals are local policy inputs, not live risk feeds.
 - The agent's gas comes from its account. The key's allowance caps the gas it can burn.
 
-## Independence and disclosure
-
-This is one of two independent NEAR submissions by the same builder. The other is `keyhalt` at https://github.com/unifyWeb3/keyhalt. The two repositories share no code, and each README names the other. Built at NEAR HACKATHON.
+This is one of two independent NEAR submissions by the same builder, the other is `keyhalt` at https://github.com/unifyWeb3/keyhalt. Built at NEAR HACKATHON.
 
 ## Licence
 
