@@ -256,8 +256,10 @@ async function copyCommand(button, cmd) {
     await navigator.clipboard.writeText(cmd);
     const original = button.textContent;
     button.textContent = 'Copied';
+    button.setAttribute('aria-live', 'polite');
     setTimeout(() => {
       button.textContent = original;
+      button.removeAttribute('aria-live');
     }, 1400);
   } catch {
     button.textContent = 'Not copyable here';

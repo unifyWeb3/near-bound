@@ -148,13 +148,22 @@ cd ../contract && cargo test
 
 See 17 policy tests pass, then 13 contract tests pass. The policy suite covers the denial paths: over-budget, unknown vendor, single spend cap, rate limit, revoked agent, replayed nonce, zero amount, and the order of the blocklist check. The contract suite covers who may call what, the kill switch stopping an approval, a transfer that settles, a transfer that fails, an agent that cannot be registered twice, and two approvals that cannot together go over the budget.
 
-4. Run the protocol arm against testnet. It needs an owner account and an agent account holding the scoped key.
+4. Run the protocol arm against testnet. It needs an owner account, an agent account holding the scoped key, and the key file.
 
 ```bash
-demo/protocol_arm.sh <owner> <agent> <vendor> <agent-key-file>
+# the scoped key the agent uses
+near account add-key bound-agent.testnet grant-function-call-access \
+  --allowance 0.2near --contract-account-id bound-testnet-97685.testnet \
+  --function-names request_spend autogenerate-new-keypair \
+  --signature-scheme ed25519 save-to-legacy-keychain \
+  network-config testnet sign-with-legacy-keychain send
+
+demo/protocol_arm.sh bound-testnet-97685.testnet bound-agent.testnet \
+  bound-vendor.testnet \
+  ~/.near-credentials/testnet/bound-agent.testnet/ed25519_<key>.json
 ```
 
-See the PASS lines for a method the key cannot call, a receiver the key cannot call, a deposit on a function call key, and a call the key's allowance cannot afford. It writes a denial receipt for the unknown vendor and shows the policy refusing over-budget spends.
+See the PASS lines for a method the key cannot call, a receiver the key cannot call, a deposit on a function call key, and a call the key's allowance cannot afford. It writes a denial receipt for the unknown vendor and shows the policy refusing over-budget spends. The output of the run behind the demo is in `demo/protocol_arm.out`.
 
 ## What's real, what isn't
 
@@ -165,9 +174,19 @@ See the PASS lines for a method the key cannot call, a receiver the key cannot c
 | Figures in the console | Read live from the public testnet RPC at page open |
 | Console on RPC failure | Last good view, labelled stale. Never a guessed number |
 | Demo video | Animated from real chain state, silent, captions only |
-| Counterparty signals | Policy inputs, not live risk feeds |
+| Counterparty signals | The blocklist and the vendor allowlist the owner sets. No live risk feed, no account age, no code change watch |
 | Operator side | The NEAR CLI. No browser wallet, no revoke button |
 | Audit | Not audited. Testnet only. No real money has moved |
+
+## Known limitations
+
+Things this does not do, in the open:
+
+- There is no counterparty check service. The owner sets the blocklist and the vendor allowlist, and the policy engine reads them. The track prompt for this lane asks for a check that scores the receiver on account age, whether it is a contract and whether its code changed, the prior interactions with it, and a blocklist other agents can report to. None of that is built. The account age needs an indexer rather than the RPC, and a shared blocklist would change the state layout of a contract that is already live.
+- The contract cannot be upgraded in place. It has no migrate method, so a fix needs a redeploy that carries the state over. One has already been done, on 2026-11-05, and it kept every receipt.
+- The receipts are never pruned. Every decision is kept forever, and the contract pays for the storage.
+- The demo vendor contract counts the deposit it was given rather than the price it kept, so its `taken` figure is too high.
+- The NEAR CLI is the operator side, so there is no browser wallet and no revoke button.
 
 ## Engineering decisions
 
@@ -202,9 +221,21 @@ You need Rust with a C toolchain and, for the CLI reads, near-cli-rs. Then:
 git clone https://github.com/unifyWeb3/near-bound.git
 cd near-bound
 cd policy && cargo test
+cd ../contract && cargo test
 ```
 
 The console needs no build. Open `web/index.html` in a browser, or visit https://spendguard-oxunify.vercel.app.
+
+The wasm on testnet was built with:
+
+```bash
+cargo build --release --target wasm32-unknown-unknown
+wasm-opt -Oz --enable-nontrapping-float-to-int --enable-bulk-memory \
+  target/wasm32-unknown-unknown/release/bound_contract.wasm -o bound_contract.wasm
+```
+
+Its sha256 is `728f3f96cad3c1240b659c7c5675d1e77dd1f6bc263cb843445091a5977639c4`, and the code hash on chain is
+`8iCAhJCsD8HWFHq5TcEqJzDQ5tuES5GbfvYkVESkJgA7`.
 
 ## Limits
 

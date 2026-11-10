@@ -1,0 +1,29 @@
+Bound protocol arm
+owner  bound-testnet-97685.testnet
+agent  bound-agent.testnet
+vendor bound-vendor.testnet
+
+1. The restricted key can request a spend.
+PASS  request_spend is allowed
+
+2. The same key cannot approve its own request.
+PASS  method allowlist rejects approve_request
+      isn't allowed by the access key
+
+3. The same key cannot call the vendor directly.
+PASS  receiver scope rejects the vendor call
+      doesn't match the access key
+
+4. The same key cannot carry a deposit.
+PASS  deposit is rejected on a function call key
+      Having a deposit with a function call action is not allowed
+
+5. The allowance caps the gas the key can spend.
+PASS  allowance rejects an expensive call
+      does not have enough allowance
+
+6. The contract refuses a vendor outside the allowlist.
+PASS  policy rejects an unknown vendor
+      VendorNotAllowed
+
+6 passed, 0 failed

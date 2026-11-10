@@ -1,0 +1,53 @@
+name: tests
+
+on:
+  push:
+    branches: [master, 'fix/**']
+  pull_request:
+
+jobs:
+  policy:
+    name: policy engine
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: test
+        working-directory: policy
+        run: cargo test --locked
+      - name: fmt
+        working-directory: policy
+        run: cargo fmt --check
+      - name: clippy
+        working-directory: policy
+        run: cargo clippy --locked -- -D warnings
+
+  contract:
+    name: contract
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          targets: wasm32-unknown-unknown
+      - name: test
+        working-directory: contract
+        run: cargo test --locked
+      - name: fmt
+        working-directory: contract
+        run: cargo fmt --check
+      - name: clippy
+        working-directory: contract
+        run: cargo clippy --locked -- -D warnings
+      - name: build the wasm
+        working-directory: contract
+        run: cargo build --release --target wasm32-unknown-unknown
+      - name: the wasm
+        working-directory: contract
+        uses: actions/upload-artifact@v4
+        with:
+          name: bound_contract.wasm
+          path: contract/target/wasm32-unknown-unknown/release/bound_contract.wasm
