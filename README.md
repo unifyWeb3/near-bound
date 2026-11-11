@@ -325,7 +325,7 @@ which. The mainnet branch of this project is not built.
 | --- | --- |
 | Contract, policy engine, receipts | Real, on testnet, live |
 | Denial reasons on receipts | Real, written by the contract |
-| The receipt count | Every decision on chain. Nine of them are tool runs, memoed "stranger", "the agent cli against a stranger" or "probe". The counts are in [docs/CLAIMS.md](docs/CLAIMS.md) |
+| The receipt count | Every decision on chain. Eleven of them are tool runs, nine from the agent CLI on 2026-11-10 and 2026-11-11 and two from the protocol arm on 2026-11-06, memoed "stranger", "the agent cli against a stranger" or "probe". The other nineteen are the demo. The counts are in [docs/CLAIMS.md](docs/CLAIMS.md) |
 | Figures in the console | Read live from the public testnet RPC at page open |
 | The console feed | Every receipt the page read, not a slice of them. The count says "30 of 30" |
 | Console on RPC failure | Last good view, labelled stale. Never a guessed number |
