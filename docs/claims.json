@@ -1,28 +1,28 @@
 {
-  "agent_balance_yocto": "397894035213358800000000",
+  "agent_balance_yocto": "396255931264804100000000",
   "agent_key": "ed25519:2TfeadSSpJfpxTPj9ra5q1SGQGEzG3a4YnGGdsoyQoRY",
-  "agent_key_allowance_yocto": "195609862192783400000000",
+  "agent_key_allowance_yocto": "193971758244228700000000",
   "agent_key_methods": [
     "request_spend"
   ],
   "agent_key_receiver": "bound-testnet-97685.testnet",
-  "code_hash": "8iCAhJCsD8HWFHq5TcEqJzDQ5tuES5GbfvYkVESkJgA7",
-  "code_sha256": "728f3f96cad3c1240b659c7c5675d1e77dd1f6bc263cb843445091a5977639c4",
-  "contract_balance_yocto": "17077506950898149400000000",
+  "code_hash": "HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d",
+  "code_sha256": "f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e",
+  "contract_balance_yocto": "17076158420442356500000000",
   "contract_key": "ed25519:ERnZ8BLvFusfCPReopLBX3fcakY9DPCauYcW3pfskV2j",
-  "contract_storage_bytes": 192473,
-  "generated_at": "2026-11-11 00:23 UTC",
+  "contract_storage_bytes": 193927,
+  "generated_at": "2026-11-11 01:32 UTC",
   "policy": {
     "agent_id": "bound-agent.testnet",
     "budget": 5000000000000000000000000,
     "last_nonce": 15,
     "max_single_spend": 1000000000000000000000000,
     "period_seconds": 3600,
-    "period_start": 1794356597,
+    "period_start": 1794357707,
     "rate_count": 1,
     "rate_limit": 5,
     "remaining": 5000000000000000000000000,
-    "request_count": 13,
+    "request_count": 14,
     "revoked": false,
     "spent": 0,
     "vendors": [
@@ -38,10 +38,10 @@
   "policy_vendors": [
     "bound-vendor.testnet"
   ],
-  "receipt_count": 23,
+  "receipt_count": 30,
   "receipt_outcomes": {
     "Approved": 8,
-    "Denied": 14,
+    "Denied": 21,
     "Failed": 1
   },
   "receipt_sha256": {
