@@ -263,6 +263,57 @@ def render(data):
     return "\n".join(lines)
 
 
+BRANCHES = {
+    "the contract is upgraded in place, the state carried over": "testnet only",
+    "the agent is given NEAR for gas": "testnet only",
+    "the first of two requests for 1 NEAR": "testnet only",
+    "the second of two requests for 1 NEAR": "testnet only",
+    "the first of the two is approved": "testnet only",
+    "the second of the two is approved": "testnet only",
+    "the agent asks for 0.5 NEAR": "testnet only",
+    "the owner freezes every agent": "testnet only",
+    "the owner tries to approve while frozen": "testnet only",
+    "the owner lifts the freeze": "testnet only",
+    "the owner approves it": "testnet only",
+    "the owner adds a vendor that does not exist": "testnet only",
+    "the agent asks to pay the vendor that does not exist": "testnet only",
+    "the owner removes the vendor that does not exist": "testnet only",
+    "the protocol arm runs against the scoped key": "testnet only",
+}
+
+
+def evidence_section(data):
+    """The README's evidence table, generated so the hashes cannot drift."""
+    lines = []
+    lines.append("| What | Transaction | Result | Branch |")
+    lines.append("| --- | --- | --- | --- |")
+    for item in data["transactions"]:
+        link = f"[{item['hash'][:12]}](https://explorer.testnet.near.org/transactions/{item['hash']})"
+        lines.append(f"| {item['what']} | {link} | {item['result']} | {BRANCHES.get(item['what'], 'testnet only')} |")
+    lines.append("")
+    lines.append("Every one of these is on testnet. Nothing here has been run on mainnet, and")
+    lines.append("nothing here can be: there is no mainnet deployment. The branch column says")
+    lines.append("which. The mainnet branch of this project is not built.")
+    return "\n".join(lines)
+
+
+def write_evidence(data):
+    path = os.path.join(ROOT, "README.md")
+    if not os.path.exists(path):
+        return False
+    with open(path, "r", encoding="utf-8") as handle:
+        text = handle.read()
+    start = "<!-- evidence:start -->"
+    end = "<!-- evidence:end -->"
+    if start not in text or end not in text:
+        return False
+    head, rest = text.split(start, 1)
+    _, tail = rest.split(end, 1)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(head + start + "\n" + evidence_section(data) + "\n" + end + tail)
+    return True
+
+
 def main():
     mode = sys.argv[1] if len(sys.argv) > 1 else ""
     data = collect()
@@ -306,6 +357,8 @@ def main():
             handle.write("\n")
         print("wrote docs/claims.json")
 
+    if write_evidence(data):
+        print("wrote the evidence table in README.md")
     with open(markdown_path, "w", encoding="utf-8") as handle:
         handle.write(render(data))
     with open(claims_path, "w", encoding="utf-8") as handle:

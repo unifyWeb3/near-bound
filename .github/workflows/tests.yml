@@ -25,6 +25,11 @@ jobs:
   contract:
     name: contract
     runs-on: ubuntu-latest
+    env:
+      # The wasm carries the paths of the crates it was built from, so the
+      # build only gives the same bytes on every machine if the cargo home is
+      # in the same place. The README has the same recipe.
+      CARGO_HOME: /tmp/bound-cargo
     steps:
       - uses: actions/checkout@v4
       # The rust version is pinned so the wasm this workflow builds is the
@@ -45,7 +50,7 @@ jobs:
         run: cargo clippy --all-targets --locked -- -D warnings
       - name: build the wasm
         working-directory: contract
-        run: cargo build --release --target wasm32-unknown-unknown
+        run: cargo build --release --locked --target wasm32-unknown-unknown
       - name: get wasm-opt
         run: |
           curl -sL -o binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz

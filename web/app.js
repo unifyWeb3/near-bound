@@ -324,7 +324,10 @@ async function refresh() {
     renderCharts(state);
     renderFeed(state);
     lastGood = state;
-    $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.chainReceipts} receipts on chain`;
+    // The request count is next to the receipt count on purpose. A request
+    // that is waiting for its transfer to settle has no receipt yet, so the
+    // two numbers differ for a moment.
+    $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.totalRequests} requests, ${state.chainReceipts} receipts on chain`;
     const partial = (state.receiptErrors ?? 0) > 0;
     $('error-bar').hidden = !partial;
     $('error-bar').textContent = partial

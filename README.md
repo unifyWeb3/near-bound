@@ -51,11 +51,25 @@ SpendGuard is a NEAR contract that holds the money and the rules for a paid AI a
 
 The treasury is inside the contract. The agent's key cannot attach a deposit, and every payment is decided there.
 
+### What is claimed, and what enforces it
+
+Every claim below is a rule in the contract, a test that fails without it, and
+something on chain to look at. The numbers are in [docs/CLAIMS.md](docs/CLAIMS.md).
+
+| Claim | The rule in the contract | The test | On chain |
+| --- | --- | --- | --- |
+| The agent cannot move money | The key is a function call key on one method of one contract, so the protocol refuses a deposit and refuses another receiver before the contract runs | `demo/protocol_arm.sh`, all six steps pass | the agent key list, one key, one method, one receiver |
+| The policy refuses a spend over the budget | `evaluate` compares the spend so far plus the amount with the budget, and the evidence carries both numbers | `policy`: `a_spend_above_the_remaining_budget_is_denied` | receipt 9 |
+| Two approvals cannot go over the budget together | `approve_request` reads the policy again at the moment of approval and reserves the spend before the transfer | `contract`: `two_approvals_cannot_together_go_over_the_budget` | receipt 20 |
+| The owner can stop everything with one call | `set_kill_switch`, checked in `request_spend` and in `approve_request` | `contract`: `a_request_made_before_the_freeze_is_refused_after_the_freeze` | the frozen approval was refused and the request stayed open |
+| A receipt never says the money moved when it did not | The receipt is written in the settlement callback, after the transfer has run | `contract`: `a_failed_transfer_gives_the_budget_back` | receipt 18 |
+| Every decision is readable | Every decision writes a receipt, the refusals too | `policy`: `every_denial_has_a_rule_attached` | [docs/CLAIMS.md](docs/CLAIMS.md) |
+
 ## Demo
 
 <https://youtu.be/E9JbF9TlKs4>
 
-Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. As of 2026-11-11 the chain shows 23 receipts, 14 of them denials, and the policy is 5 NEAR an hour.
+Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. The chain state and the counts are in [docs/CLAIMS.md](docs/CLAIMS.md).
 
 The demo post on X, published at NEAR HACKATHON: <https://x.com/oxunify/status/2120085871852478803>
 
@@ -90,7 +104,7 @@ The budget is checked again at the moment the owner approves, not only when the 
 
 The denial reasons, exactly as the policy engine returns them: `AgentRevoked`, `InvalidAmount`, `NonceReplay`, `CounterpartyBlocked`, `VendorNotAllowed`, `SingleSpendExceeded`, `RateLimited`, `BudgetExceeded`, `KillSwitch`.
 
-Denials are first class. 14 of the 23 receipts on chain at 2026-11-11 are denials. If you want to see the policy refuse something, it is already there.
+Denials are first class. If you want to see the policy refuse something, it is already there, and [docs/CLAIMS.md](docs/CLAIMS.md) says how many.
 
 ## How to read a receipt
 
@@ -102,6 +116,27 @@ A receipt is written once and it is never changed afterwards.
 | `Approved` | The owner approved, the transfer went through and the money moved. |
 | `Failed` | The owner approved but the transfer did not go through. The reserved budget was given back and the receipt says why. |
 
+## The state of a request
+
+| Request state | What it means | Receipt | The budget |
+| --- | --- | --- | --- |
+| `Pending` | The agent asked and the policy passed. The owner or the runner can approve or reject it | none yet | untouched |
+| `NeedsApproval` | A flag was raised, only the owner can decide it | none yet | untouched |
+| `ApprovedPending` | The owner approved. The budget is reserved and the transfer is in flight | none yet, the receipt comes when it settles | reserved |
+| `Approved` | The transfer went through | `Approved` | spent |
+| `SettlementFailed` | The transfer did not go through | `Failed`, with the reason | given back |
+| `Denied` | The policy refused it | `Denied`, with the rule and the evidence | untouched |
+
+While the owner has frozen the agents, `request_spend` refuses with a
+`KillSwitch` denial receipt and no request is created, and `approve_request` is
+refused outright. A request that is already open stays open and can be
+approved once the freeze is lifted.
+
+A request that is `ApprovedPending` has no receipt yet. That is the one state
+the console cannot show, because the decision has not been made. The console
+shows the number of requests next to the number of receipts, so the gap is
+visible, and the gap closes on its own when the transfer settles.
+
 ## On-chain, verified
 
 | Object | Account |
@@ -109,7 +144,7 @@ A receipt is written once and it is never changed afterwards.
 | Contract and treasury | `bound-testnet-97685.testnet` |
 | Agent | `bound-agent.testnet` |
 | Vendor | `bound-vendor.testnet` |
-| Receipts at 2026-11-11 | 23, 14 of them denials, 1 a failed transfer |
+| Receipts | the counts are in [docs/CLAIMS.md](docs/CLAIMS.md) |
 | Live policy | 5 NEAR an hour, 1 NEAR a payment, 5 payments a minute, one vendor |
 
 Three receipts show the contract doing the work, and each one is a
@@ -138,7 +173,7 @@ The second command prints `reason: BudgetExceeded` and the rule "the spend would
 Do X, see Y:
 
 1. Open the nearblocks link above. See the contract deployment and the transactions on chain.
-2. Run the two read commands. See `23`, then see receipt 10 with `BudgetExceeded`.
+2. Run the two read commands. See the count, then see receipt 10 with `BudgetExceeded`.
 3. Run the test suites:
 
 ```bash
@@ -166,6 +201,35 @@ demo/protocol_arm.sh bound-testnet-97685.testnet bound-agent.testnet \
 
 See the PASS lines for a method the key cannot call, a receiver the key cannot call, a deposit on a function call key, and a call the key's allowance cannot afford. It writes a denial receipt for the unknown vendor and shows the policy refusing over-budget spends. The output of the run behind the demo is in `demo/protocol_arm.out`.
 
+## Evidence
+
+Every transaction below is on NEAR testnet. The hashes and the figures are
+generated by `scripts/claims.py`, so they cannot drift from the chain.
+
+<!-- evidence:start -->
+| What | Transaction | Result | Branch |
+| --- | --- | --- | --- |
+| the contract is upgraded in place, the state carried over | [64y7jtaqqbpH](https://explorer.testnet.near.org/transactions/64y7jtaqqbpH8s3F8VjC7CML8dFAo35aVHNy2LPLLu1T) | deployed, code hash 8iCAhJCsD8HWFHq5TcEqJzDQ5tuES5GbfvYkVESkJgA7 | testnet only |
+| the agent is given NEAR for gas | [HnHYC226AEEa](https://explorer.testnet.near.org/transactions/HnHYC226AEEaM4L8kuekL86jTp1ur8bnfQEATCpcfsPG) | the agent account can make a call | testnet only |
+| the first of two requests for 1 NEAR | [EEHzgVkt4HXT](https://explorer.testnet.near.org/transactions/EEHzgVkt4HXTHCriHq335fpP97Kp6ZQ9M2EmSXfHKjqS) | request 10 | testnet only |
+| the second of two requests for 1 NEAR | [GebCsWA4K5S2](https://explorer.testnet.near.org/transactions/GebCsWA4K5S2GHfM1QzmymoQ2p8d1qp6hBsKAcfMsmDb) | request 11 | testnet only |
+| the first of the two is approved | [HBD7hJL9bv5N](https://explorer.testnet.near.org/transactions/HBD7hJL9bv5Npir8T9TtNMzJ2DJf4hpbUDWNvQWU6bGW) | receipt 19, Approved | testnet only |
+| the second of the two is approved | [6MKVUN9QoLd6](https://explorer.testnet.near.org/transactions/6MKVUN9QoLd6y92nrgrRYfrVWR2DmgCpbRQnnfXb1JEv) | receipt 20, Denied BudgetExceeded | testnet only |
+| the agent asks for 0.5 NEAR | [HEBxWQZFBHuJ](https://explorer.testnet.near.org/transactions/HEBxWQZFBHuJNcaZCGcLtaeRJmU8nWVkkgX6sSkhqHPi) | request 8 | testnet only |
+| the owner freezes every agent | [GgmPg2rmYi31](https://explorer.testnet.near.org/transactions/GgmPg2rmYi31ZQuDahyhV7PND8a2bfjFQdW6qvUiaWSX) | the kill switch is on | testnet only |
+| the owner tries to approve while frozen | [BsoBVYQXyg1N](https://explorer.testnet.near.org/transactions/BsoBVYQXyg1NdvFmURCACBDK6J96PsdSGq8v2bELS8YY) | refused, no receipt, the request stays open | testnet only |
+| the owner lifts the freeze | [4dWyQA12DyjU](https://explorer.testnet.near.org/transactions/4dWyQA12DyjUP57XJGocu7iPHYDJpyk9UnTSz4bzwcpD) | the kill switch is off | testnet only |
+| the owner approves it | [2jPzCn18sed5](https://explorer.testnet.near.org/transactions/2jPzCn18sed5EXNorsSdbyDcDhkVfEATr7AgHTMiUZ2v) | receipt 17, Approved | testnet only |
+| the owner adds a vendor that does not exist | [6HL6VHy1zzoz](https://explorer.testnet.near.org/transactions/6HL6VHy1zzozfDSmLeqmYFcKL1sxWawo6Yvr56CBquA8) | the allowlist has ghost-vendor.testnet | testnet only |
+| the agent asks to pay the vendor that does not exist | [Cc6rmKhH5gAa](https://explorer.testnet.near.org/transactions/Cc6rmKhH5gAa89cqARW9zhy2jiFbEGrDnZtm9RmKA9yf) | request 9 | testnet only |
+| the owner approves it | [4JTiK48kgmGw](https://explorer.testnet.near.org/transactions/4JTiK48kgmGwLJxjjtdDLEZn7gZhvGVKpqJgT7sXvQRm) | receipt 18, Failed TransferFailed, the budget came back | testnet only |
+| the owner removes the vendor that does not exist | [3RgJLNZ5rF4z](https://explorer.testnet.near.org/transactions/3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S) | the allowlist is back to one vendor | testnet only |
+
+Every one of these is on testnet. Nothing here has been run on mainnet, and
+nothing here can be: there is no mainnet deployment. The branch column says
+which. The mainnet branch of this project is not built.
+<!-- evidence:end -->
+
 ## What's real, what isn't
 
 | Claim | State |
@@ -183,7 +247,7 @@ See the PASS lines for a method the key cannot call, a receiver the key cannot c
 
 Things this does not do, in the open:
 
-- There is no counterparty check service. The owner sets the blocklist and the vendor allowlist, and the policy engine reads them. The track prompt for this lane asks for a check that scores the receiver on account age, whether it is a contract and whether its code changed, the prior interactions with it, and a blocklist other agents can report to. None of that is built. The account age needs an indexer rather than the RPC, and a shared blocklist would change the state layout of a contract that is already live.
+- There is no counterparty check service. The owner sets the blocklist and the vendor allowlist, and the policy engine reads them. Nothing scores the receiver itself: not how old the account is, not whether it is a contract or whether its code changed, not how much this agent has paid it before, and no blocklist that other agents can report to. The account age needs an indexer rather than the RPC, and a shared blocklist would change the state layout of a contract that is already live.
 - The contract cannot be upgraded in place. It has no migrate method, so a fix needs a redeploy that carries the state over. One has already been done, on 2026-11-05, and it kept every receipt.
 - The receipts are never pruned. Every decision is kept forever, and the contract pays for the storage.
 - The runner and the owner are the same account on testnet, so there is no second reviewer yet. The contract supports a separate runner account.
@@ -236,8 +300,9 @@ wasm-opt -Oz --enable-nontrapping-float-to-int --enable-bulk-memory \
   target/wasm32-unknown-unknown/release/bound_contract.wasm -o bound_contract.wasm
 ```
 
-Its sha256 is `728f3f96cad3c1240b659c7c5675d1e77dd1f6bc263cb843445091a5977639c4`, and the code hash on chain is
-`8iCAhJCsD8HWFHq5TcEqJzDQ5tuES5GbfvYkVESkJgA7`.
+The sha256 of that wasm and the code hash on chain are in
+[docs/CLAIMS.md](docs/CLAIMS.md). They are the same number written two ways,
+so a judge can check the deployed code against this source.
 
 ## Limits
 
