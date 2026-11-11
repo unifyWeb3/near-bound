@@ -201,6 +201,19 @@ demo/protocol_arm.sh bound-testnet-97685.testnet bound-agent.testnet \
 
 See the PASS lines for a method the key cannot call, a receiver the key cannot call, a deposit on a function call key, and a call the key's allowance cannot afford. It writes a denial receipt for the unknown vendor and shows the policy refusing over-budget spends. The output of the run behind the demo is in `demo/protocol_arm.out`.
 
+5. Ask for a spend the way an agent would. The script takes the amount in yoctoNEAR and sends it as base64 encoded JSON, because the CLI turns a JSON number bigger than 2^53 into a float.
+
+```bash
+demo/agent.sh --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --nonce 1 \
+  --key ~/.near-credentials/testnet/bound-agent.testnet/ed25519_<key>.json
+```
+
+It prints the transaction, the receipt if the policy wrote one, and a link to
+the transaction. It works against any deployment, so a stranger with their own
+contract and their own registered agent can run it from a clean clone.
+
 ## Evidence
 
 Every transaction below is on NEAR testnet. The hashes and the figures are
@@ -295,10 +308,18 @@ The console needs no build. Open `web/index.html` in a browser, or visit https:/
 The wasm on testnet was built with:
 
 ```bash
-cargo build --release --target wasm32-unknown-unknown
+export CARGO_HOME=/tmp/bound-cargo
+export RUSTFLAGS="--remap-path-prefix=$PWD=repo --remap-path-prefix=$CARGO_HOME/registry/src/index.crates.io-1949cf8c6b5b557f=registry"
+cd contract
+cargo build --release --locked --target wasm32-unknown-unknown
 wasm-opt -Oz --enable-nontrapping-float-to-int --enable-bulk-memory \
   target/wasm32-unknown-unknown/release/bound_contract.wasm -o bound_contract.wasm
 ```
+
+The cargo home is in that one place on purpose, and the two rewrites take the
+machine out of the bytes. The wasm carries the paths of the crates it was
+built from, so without them the same source gives different bytes on
+different machines.
 
 The sha256 of that wasm and the code hash on chain are in
 [docs/CLAIMS.md](docs/CLAIMS.md). They are the same number written two ways,

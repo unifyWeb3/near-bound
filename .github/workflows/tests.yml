@@ -30,6 +30,12 @@ jobs:
       # build only gives the same bytes on every machine if the cargo home is
       # in the same place. The README has the same recipe.
       CARGO_HOME: /tmp/bound-cargo
+      # The wasm carries the paths of the crates it was built from. These two
+      # rewrites take the machine out of the bytes, so the artifact is the
+      # same everywhere.
+      RUSTFLAGS: >-
+        --remap-path-prefix=/home/runner/work/near-bound/near-bound=repo
+        --remap-path-prefix=/tmp/bound-cargo/registry/src/index.crates.io-1949cf8c6b5b557f=registry
     steps:
       - uses: actions/checkout@v4
       # The rust version is pinned so the wasm this workflow builds is the

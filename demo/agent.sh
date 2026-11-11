@@ -9,9 +9,9 @@
 # 5000000000000000000000000 would arrive as 5e+24 and the contract could not
 # read it.
 #
-# The script prints the transaction, the receipt if the policy wrote one, and
-# a link to the transaction. It needs the near CLI, base64 and python3, and
-# nothing else.
+# The script prints what the contract decided, the receipt if the policy wrote
+# one, and a link to the transaction. It needs the near CLI, base64 and
+# python3, and nothing else.
 set -uo pipefail
 
 CONTRACT=""
@@ -31,7 +31,7 @@ while [ $# -gt 0 ]; do
     --nonce) NONCE="$2"; shift 2 ;;
     --key) KEY="$2"; shift 2 ;;
     --memo) MEMO="$2"; shift 2 ;;
-    -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
@@ -48,52 +48,60 @@ if ! command -v near > /dev/null; then
   exit 2
 fi
 
-# The receipt count before the request, so the script can tell whether the
-# policy wrote a receipt.
+clean() { sed -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g'; }
+
+# The number the contract read, before and after the request.
 count_receipts() {
   near contract call-function as-read-only "$CONTRACT" get_receipt_count \
-    json-args '{}' network-config testnet now 2>/dev/null \
-    | python3 -c "
-import json,sys
+    json-args '{}' network-config testnet now 2>&1 \
+    | clean | awk '/return value \(printed to stdout\)/{getline; print; exit}'
+}
+
+# What the contract answered. The CLI pretty prints the return value, so the
+# JSON block is read with a raw decoder rather than line by line.
+return_value() {
+  printf '%s' "$1" | clean | python3 -c "
+import json, sys
 raw = sys.stdin.read()
-start = raw.find('[')
-end = raw.rfind(']')
+marker = 'return value (printed to stdout):'
+at = raw.find(marker)
+if at < 0:
+    raise SystemExit(0)
 try:
-    print(json.loads(raw[start:end + 1])[0])
-except Exception:
-    print(0)
+    value, _ = json.JSONDecoder().raw_decode(raw[at + len(marker):].strip())
+except ValueError:
+    raise SystemExit(0)
+print(json.dumps(value))
+"
+}
+
+near_of() {
+  python3 -c "
+value = int('$1')
+whole = value // 10**24
+frac = str(value % 10**24).zfill(24).rstrip('0')
+print(f'{whole}.{frac}' if frac else whole)
 "
 }
 
 BEFORE=$(count_receipts)
+BEFORE=${BEFORE:-0}
 
-ARGS=$(python3 -c "
-import json,sys
-print(json.dumps({
-    'agent_id': sys.argv[1],
-    'vendor': sys.argv[2],
-    'amount': int(sys.argv[3]),
-    'nonce': int(sys.argv[4]),
-    'memo': sys.argv[5],
-}))
-" "$AGENT" "$VENDOR" "$AMOUNT" "$NONCE" "$MEMO")
-
-echo "asking to spend $(python3 -c "print(int('$AMOUNT')/1e24)") NEAR to $VENDOR"
+echo "asking to spend $(near_of "$AMOUNT") NEAR to $VENDOR"
 echo "  contract $CONTRACT"
 echo "  agent    $AGENT"
 echo "  nonce    $NONCE"
 
 OUT=$(near contract call-function as-transaction "$CONTRACT" request_spend \
-  base64-args "$(printf '%s' "$ARGS" | base64 -w0)" \
+  base64-args "$(printf '{"agent_id":"%s","vendor":"%s","amount":%s,"nonce":%s,"memo":"%s"}' \
+    "$AGENT" "$VENDOR" "$AMOUNT" "$NONCE" "$MEMO" | base64 -w0)" \
   prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
   sign-as "$AGENT" network-config testnet sign-with-access-key-file "$KEY" send 2>&1)
 
-HASH=$(printf '%s' "$OUT" | sed -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | grep -oE 'Transaction ID: [1-9A-HJ-NP-Za-km-z]{40,60}' | awk '{print $3}')
-REQUEST_ID=$(printf '%s' "$OUT" | sed -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | grep -oE '"request_id": [0-9]+' | head -1 | awk '{print $2}')
-
+HASH=$(printf '%s' "$OUT" | clean | grep -oE 'Transaction ID: [1-9A-HJ-NP-Za-km-z]{40,60}' | awk '{print $3}')
 if [ -z "$HASH" ]; then
   echo "the call did not go through"
-  printf '%s\n' "$OUT" | sed -e 's/\x1b\[[0-9;?]*[a-zA-Z]//g' | grep -E 'Error|error|trap|not enough' | head -5
+  printf '%s' "$OUT" | clean | grep -E 'Error|error|trap|not enough' | head -5
   exit 1
 fi
 
@@ -102,29 +110,52 @@ echo "transaction $HASH"
 echo "  https://testnet.nearblocks.io/txs/$HASH"
 echo "  https://explorer.testnet.near.org/transactions/$HASH"
 
-if [ -n "$REQUEST_ID" ]; then
+OUTCOME=$(return_value "$OUT")
+if [ -n "$OUTCOME" ]; then
   echo
-  echo "the request is number $REQUEST_ID and is waiting for the owner"
-  echo "  no receipt yet, the policy writes one when the owner approves and the transfer settles"
-  echo "  a refused request has a receipt straight away"
+  printf '%s' "$OUTCOME" | python3 -c "
+import json,sys
+outcome = json.load(sys.stdin)
+if outcome['reason']:
+    print('the policy refused it:', outcome['reason'])
+    print(' ', outcome['rule'])
+    for line in outcome.get('evidence', []):
+        print(' ', line)
+else:
+    print('every hard check passed, the request is waiting for the owner')
+    print('  request number', outcome['request_id'])
+    print('  no receipt yet, the policy writes one when the owner approves and the transfer settles')
+"
 fi
 
 sleep 3
 AFTER=$(count_receipts)
+AFTER=${AFTER:-0}
 if [ "$AFTER" -gt "$BEFORE" ] 2>/dev/null; then
-  NEW=$((BEFORE))
+  # The count is the number of receipts, so the first new one has the id the
+  # count had before.
+  NEW=$BEFORE
   while [ "$NEW" -lt "$AFTER" ]; do
-    NEW=$((NEW + 1))
     echo
     echo "receipt $NEW"
     near contract call-function as-read-only "$CONTRACT" get_receipt \
-      json-args "{\"receipt_id\":$NEW}" network-config testnet now 2>/dev/null \
-      | python3 -c "
-import json,sys
+      json-args "{\"receipt_id\":$NEW}" network-config testnet now 2>&1 \
+      | clean | python3 -c "
+import json, sys
 raw = sys.stdin.read()
-start = raw.find('{')
-end = raw.rfind('}')
-print(json.dumps(json.loads(raw[start:end + 1]), indent=2))
+marker = 'return value (printed to stdout):'
+at = raw.find(marker)
+if at < 0:
+    raise SystemExit(0)
+value, _ = json.JSONDecoder().raw_decode(raw[at + len(marker):].strip())
+receipt = value
+print('  outcome   ', receipt['outcome'])
+if receipt['reason']:
+    print('  reason    ', receipt['reason'])
+print('  rule      ', receipt['rule'])
+for line in receipt.get('evidence', []):
+    print('  evidence  ', line)
 "
+    NEW=$((NEW + 1))
   done
 fi
