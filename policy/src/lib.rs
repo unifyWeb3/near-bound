@@ -251,7 +251,10 @@ mod tests {
             period_seconds: 3600,
             period_start: NOW,
             spent: 0,
-            vendors: vec!["vendor-a.testnet".to_string(), "vendor-b.testnet".to_string()],
+            vendors: vec![
+                "vendor-a.testnet".to_string(),
+                "vendor-b.testnet".to_string(),
+            ],
             max_single_spend: 600,
             rate_limit: 3,
             rate_window_start: NOW,
@@ -411,4 +414,3 @@ mod tests {
         }
     }
 }
-

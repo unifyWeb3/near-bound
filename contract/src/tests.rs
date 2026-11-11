@@ -197,7 +197,10 @@ fn a_transfer_that_settles_writes_an_approved_receipt() {
     assert_eq!(receipt.outcome, Outcome::Approved);
     assert_eq!(receipt.amount, 100);
     assert_eq!(receipt.request_id, request_id);
-    assert_eq!(contract.get_request(request_id).status, RequestStatus::Approved);
+    assert_eq!(
+        contract.get_request(request_id).status,
+        RequestStatus::Approved
+    );
     assert_eq!(contract.get_policy(account(AGENT)).spent, 100);
 }
 
@@ -400,7 +403,7 @@ fn only_the_owner_may_change_the_policy() {
     let mut contract = setup();
     call_as(account(AGENT));
     let refused = panics(|| {
-        let _ = contract.set_budget(account(AGENT), 10_000);
+        contract.set_budget(account(AGENT), 10_000);
     });
     assert!(refused, "only the owner may change the budget");
 }

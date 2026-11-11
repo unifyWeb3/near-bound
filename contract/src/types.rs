@@ -9,7 +9,6 @@
 /// appended, never inserted, because the borsh discriminant of an enum
 /// variant is its position and inserting one would change how the stored
 /// values decode.
-
 use near_sdk::{near, AccountId};
 
 /// The outcome of a spend attempt.

@@ -8,10 +8,9 @@
 /// The rules live in the `bound-policy` crate as a pure function, so they can
 /// be tested without a chain. The same rules are implemented in the paper
 /// harness in JavaScript.
-
 use near_sdk::collections::{LookupMap, LookupSet};
-use near_sdk::{near, AccountId, NearToken, PromiseError};
 use near_sdk::require;
+use near_sdk::{near, AccountId, NearToken, PromiseError};
 
 mod types;
 
@@ -113,7 +112,10 @@ impl Bound {
         require!(budget > 0, "the budget must be more than zero");
         require!(period_seconds > 0, "the period must be longer than zero");
         require!(rate_limit > 0, "the rate limit must be more than zero");
-        require!(max_single_spend > 0, "the single spend limit must be more than zero");
+        require!(
+            max_single_spend > 0,
+            "the single spend limit must be more than zero"
+        );
 
         let now = now_seconds();
         let policy = Policy {
@@ -226,7 +228,10 @@ impl Bound {
         memo: String,
     ) -> SpendOutcome {
         let caller = near_sdk::env::predecessor_account_id();
-        require!(caller == agent_id, "only the agent may request a spend for itself");
+        require!(
+            caller == agent_id,
+            "only the agent may request a spend for itself"
+        );
 
         let now = now_seconds();
         if self.kill_switch {
@@ -247,10 +252,7 @@ impl Bound {
                 spent,
                 policy.budget.saturating_sub(spent),
             );
-            near_sdk::env::log_str(&format!(
-                "SpendDenied {} {} KillSwitch",
-                agent_id, vendor
-            ));
+            near_sdk::env::log_str(&format!("SpendDenied {} {} KillSwitch", agent_id, vendor));
             return SpendOutcome {
                 request_id: 0,
                 approved: false,
@@ -264,7 +266,8 @@ impl Bound {
         let policy = self.policy(&agent_id);
         let blocked = self.blocklist.contains(&vendor);
 
-        let decision = bound_policy::evaluate(&policy, vendor.as_str(), amount, nonce, now, blocked);
+        let decision =
+            bound_policy::evaluate(&policy, vendor.as_str(), amount, nonce, now, blocked);
         if !decision.allowed {
             let receipt = self.write_receipt(
                 &agent_id,
@@ -486,7 +489,8 @@ impl Bound {
             Ok(()) => {
                 // The money moved. The reservation stands and becomes the
                 // spend of the period.
-                let spent_after = self.spent_after_settlement(&request.agent_id, request_id, &policy);
+                let spent_after =
+                    self.spent_after_settlement(&request.agent_id, request_id, &policy);
                 let remaining_after = policy.budget.saturating_sub(spent_after);
                 request.status = RequestStatus::Approved;
                 let receipt = self.write_receipt(
@@ -521,7 +525,8 @@ impl Bound {
                 }
                 self.policies.insert(&request.agent_id, &policy);
 
-                let spent_after = self.spent_after_settlement(&request.agent_id, request_id, &policy);
+                let spent_after =
+                    self.spent_after_settlement(&request.agent_id, request_id, &policy);
                 let remaining_after = policy.budget.saturating_sub(spent_after);
                 request.status = RequestStatus::SettlementFailed;
                 let receipt = self.write_receipt(
@@ -565,7 +570,10 @@ impl Bound {
         request.status = RequestStatus::NeedsApproval;
         request.flags = reasons.clone();
         self.requests.insert(&request_id, &request);
-        near_sdk::env::log_str(&format!("SpendFlagged {} {}", request.agent_id, request.vendor));
+        near_sdk::env::log_str(&format!(
+            "SpendFlagged {} {}",
+            request.agent_id, request.vendor
+        ));
 
         SpendOutcome {
             request_id,
@@ -583,7 +591,8 @@ impl Bound {
         self.only_owner_or_runner();
         let mut request = self.request(request_id);
         require!(
-            request.status == RequestStatus::Pending || request.status == RequestStatus::NeedsApproval,
+            request.status == RequestStatus::Pending
+                || request.status == RequestStatus::NeedsApproval,
             "only an open request can be rejected"
         );
         require!(!reason.is_empty(), "a rejection needs a reason");
@@ -602,7 +611,7 @@ impl Bound {
             Outcome::Denied,
             "CounterpartyBlocked",
             "the counterparty check refused this receiver",
-            &vec![reason.clone()],
+            std::slice::from_ref(&reason),
             period_start,
             spent,
             policy.budget.saturating_sub(spent),
