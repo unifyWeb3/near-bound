@@ -50,6 +50,7 @@ def b58encode(raw):
 
 
 def call(method, params):
+    """The RPC wants params as an object, not a list."""
     body = json.dumps({"jsonrpc": "2.0", "id": "1", "method": method, "params": params}).encode()
     request = urllib.request.Request(
         RPC, data=body, headers={"Content-Type": "application/json"}
@@ -66,17 +67,17 @@ def view(account, method, args):
         "args_base64": base64.b64encode(json.dumps(args).encode()).decode(),
         "finality": "final",
     }
-    result = call("query", [payload])["result"]["result"]
+    result = call("query", payload)["result"]["result"]
     raw = bytes(result) if isinstance(result, list) else base64.b64decode(result)
     return json.loads(raw.decode())
 
 
 def account(account_id):
-    return call("query", ["view_account", account_id, {"finality": "final"}])["result"]
+    return call("query", {"request_type": "view_account", "account_id": account_id, "finality": "final"})["result"]
 
 
 def keys(account_id):
-    result = call("query", ["view_access_key_list", account_id, {"finality": "final"}])["result"]
+    result = call("query", {"request_type": "view_access_key_list", "account_id": account_id, "finality": "final"})["result"]
     return result.get("keys", result) if isinstance(result, dict) else result
 
 

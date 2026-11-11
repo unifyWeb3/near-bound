@@ -20,7 +20,7 @@ jobs:
         run: cargo fmt --check
       - name: clippy
         working-directory: policy
-        run: cargo clippy --locked -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
 
   contract:
     name: contract
@@ -42,7 +42,7 @@ jobs:
         run: cargo fmt --check
       - name: clippy
         working-directory: contract
-        run: cargo clippy --locked -- -D warnings
+        run: cargo clippy --all-targets --locked -- -D warnings
       - name: build the wasm
         working-directory: contract
         run: cargo build --release --target wasm32-unknown-unknown
