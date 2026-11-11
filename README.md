@@ -6,7 +6,7 @@
 
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE) [![NEAR](https://img.shields.io/badge/NEAR-testnet-00EC97.svg)](https://testnet.nearblocks.io/address/bound-testnet-97685.testnet)
 
-[Watch the demo](https://youtu.be/E9JbF9TlKs4) · [Demo post on X](https://x.com/oxunify/status/2120085871852478803) · [Live console](https://spendguard-oxunify.vercel.app/) · [How it works](#how-it-works) · [Verify it yourself](#verify-it-yourself)
+[Watch the demo](https://youtu.be/E9JbF9TlKs4) · [Demo post on X](https://x.com/oxunify/status/2120085871852478803) · [Live console](https://near-bound.vercel.app/) · [How it works](#how-it-works) · [Verify it yourself](#verify-it-yourself)
 
 </div>
 
@@ -47,7 +47,7 @@ SpendGuard is a NEAR contract that holds the money and the rules for a paid AI a
 2. The agent gets a function call access key scoped to one method, `request_spend`, on one contract, with a gas allowance. The key cannot carry a deposit, cannot call another receiver, and cannot afford a call it wasn't budgeted for.
 3. When the agent asks, the contract checks the rules at that moment. Break one, and the contract writes a denial receipt with the rule in plain words and the evidence. Pass, and the request waits for a human.
 4. The owner approves. The contract reserves the budget, moves the funds, and writes the receipt when the transfer settles. Approved, denied or failed, every decision is a transaction anyone can read.
-5. The console at https://spendguard-oxunify.vercel.app reads the receipts from the public testnet RPC. No backend, no database, nothing to trust.
+5. The console at https://near-bound.vercel.app reads the receipts from the public testnet RPC. No backend, no database, nothing to trust.
 
 The treasury is inside the contract. The agent's key cannot attach a deposit, and every payment is decided there.
 
@@ -69,7 +69,13 @@ something on chain to look at. The numbers are in [docs/CLAIMS.md](docs/CLAIMS.m
 
 <https://youtu.be/E9JbF9TlKs4>
 
-Silent, captions only. It shows the real state: the console, receipt 10 (`BudgetExceeded`), the CLI reads anyone can repeat, and this repository. The chain state and the counts are in [docs/CLAIMS.md](docs/CLAIMS.md).
+Silent, captions only. It shows the real state: the console with a refusal
+opened, its rule and its evidence, receipt 18 (the transfer failed and the
+budget came back) and receipt 20 (two approvals that could not go over the
+budget together), and this repository. The frames are screenshots of the live
+console from 2026-11-11 and they name the receipts rather than the counts,
+because the counts move every time the demo contract is used. The chain state
+and the counts are in [docs/CLAIMS.md](docs/CLAIMS.md).
 
 The demo post on X, published at NEAR HACKATHON: <https://x.com/oxunify/status/2120085871852478803>
 
@@ -80,22 +86,27 @@ flowchart LR
   A[Agent] -->|request_spend| C[Bound contract]
   C -->|checks fail| D[Receipt: Denied, with rule and evidence]
   C -->|checks pass| P[Pending request]
-  P --> R[Runner or owner review]
+  P --> R[Owner reviews it]
   R -->|flag| N[NeedsApproval]
   R -->|reject| RJ[Receipt: Denied]
   R -->|approve| T[Contract reserves the budget and moves the funds]
   T --> AP[Receipt: Approved, written when it settles]
   T --> AF[Receipt: Failed, the budget is given back]
-  N -->|owner approves| T
-  N -->|owner rejects| RJ
+  N -->|approve| T
+  N -->|reject| RJ
 ```
+
+One party reviews the request. On testnet the owner and the runner are the same
+account, `get_owner` and `get_runner` both return
+`bound-testnet-97685.testnet`. The contract supports a separate runner account
+that the owner names, and a request the runner flags waits for the owner alone.
 
 The request loop:
 
 1. The agent signs `request_spend` with its scoped key. Only the agent itself may call it for itself.
 2. The contract runs the hard checks: kill switch, revoked agent, zero amount, replayed nonce, blocked receiver, vendor allowlist, single spend cap, rate limit, period budget.
 3. A failure writes a receipt with the reason, the rule and the evidence. The money does not move.
-4. A pass stores the request as Pending. The owner reviews it, or the runner the owner named. A flagged request escalates to the owner.
+4. A pass stores the request as Pending. The owner reviews it, and a request the owner flags waits for the owner alone.
 5. The owner approves. The contract reserves the budget, moves the funds, and writes the receipt when the transfer settles, so a receipt never says the money moved when it did not. A transfer that fails gives the budget back and its receipt says the transfer did not go through.
 
 The owner can freeze every agent with one call. While the freeze is on no request is accepted and no request can be approved, including one the agent asked for before the freeze.
@@ -120,7 +131,7 @@ A receipt is written once and it is never changed afterwards.
 
 | Request state | What it means | Receipt | The budget |
 | --- | --- | --- | --- |
-| `Pending` | The agent asked and the policy passed. The owner or the runner can approve or reject it | none yet | untouched |
+| `Pending` | The agent asked and the policy passed. The owner can approve or reject it | none yet | untouched |
 | `NeedsApproval` | A flag was raised, only the owner can decide it | none yet | untouched |
 | `ApprovedPending` | The owner approved. The budget is reserved and the transfer is in flight | none yet, the receipt comes when it settles | reserved |
 | `Approved` | The transfer went through | `Approved` | spent |
@@ -206,13 +217,19 @@ See the PASS lines for a method the key cannot call, a receiver the key cannot c
 ```bash
 demo/agent.sh --contract bound-testnet-97685.testnet \
   --agent bound-agent.testnet --vendor bound-vendor.testnet \
-  --amount 1000000000000000000000000 --nonce 1 \
+  --amount 1000000000000000000000000 \
   --key ~/.near-credentials/testnet/bound-agent.testnet/ed25519_<key>.json
 ```
 
 It prints the transaction, the receipt if the policy wrote one, and a link to
 the transaction. It works against any deployment, so a stranger with their own
-contract and their own registered agent can run it from a clean clone.
+contract and their own registered agent can run it from a clean clone. The
+nonce is not in the command: the script reads the agent's last nonce from the
+policy and asks with the next one, because the contract refuses a nonce it has
+already seen.
+
+This is a shared demo contract. Every run adds a receipt and spends budget, so
+the counts move. The counts are as of the date in [docs/CLAIMS.md](docs/CLAIMS.md).
 
 ## Evidence
 
@@ -222,7 +239,7 @@ generated by `scripts/claims.py`, so they cannot drift from the chain.
 <!-- evidence:start -->
 | What | Transaction | Result | Branch |
 | --- | --- | --- | --- |
-| the contract is upgraded in place, the state carried over | [64y7jtaqqbpH](https://explorer.testnet.near.org/transactions/64y7jtaqqbpH8s3F8VjC7CML8dFAo35aVHNy2LPLLu1T) | deployed, code hash 8iCAhJCsD8HWFHq5TcEqJzDQ5tuES5GbfvYkVESkJgA7 | testnet only |
+| the contract is upgraded in place, the state carried over | [Bb64yQtpRcu1](https://explorer.testnet.near.org/transactions/Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls) | deployed, code hash HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d, sha256 f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e | testnet only |
 | the agent is given NEAR for gas | [HnHYC226AEEa](https://explorer.testnet.near.org/transactions/HnHYC226AEEaM4L8kuekL86jTp1ur8bnfQEATCpcfsPG) | the agent account can make a call | testnet only |
 | the first of two requests for 1 NEAR | [EEHzgVkt4HXT](https://explorer.testnet.near.org/transactions/EEHzgVkt4HXTHCriHq335fpP97Kp6ZQ9M2EmSXfHKjqS) | request 10 | testnet only |
 | the second of two requests for 1 NEAR | [GebCsWA4K5S2](https://explorer.testnet.near.org/transactions/GebCsWA4K5S2GHfM1QzmymoQ2p8d1qp6hBsKAcfMsmDb) | request 11 | testnet only |
@@ -238,6 +255,59 @@ generated by `scripts/claims.py`, so they cannot drift from the chain.
 | the owner approves it | [4JTiK48kgmGw](https://explorer.testnet.near.org/transactions/4JTiK48kgmGwLJxjjtdDLEZn7gZhvGVKpqJgT7sXvQRm) | receipt 18, Failed TransferFailed, the budget came back | testnet only |
 | the owner removes the vendor that does not exist | [3RgJLNZ5rF4z](https://explorer.testnet.near.org/transactions/3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S) | the allowlist is back to one vendor | testnet only |
 
+Every row can be checked with the public testnet RPC, with no key and no
+explorer. Nearblocks answers a script with a 403, and the public RPC has
+no transaction status method, so each line below reads the state the
+transaction left behind. Run any of them as it is:
+
+```bash
+# the contract is upgraded in place, the state carried over
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","account_id":"bound-testnet-97685.testnet","finality":"final"}}'
+
+# the agent is given NEAR for gas
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","account_id":"bound-agent.testnet","finality":"final"}}'
+
+# the first of two requests for 1 NEAR
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogMTB9","finality":"final"}}'
+
+# the second of two requests for 1 NEAR
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogMTF9","finality":"final"}}'
+
+# the first of the two is approved
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMTl9","finality":"final"}}'
+
+# the second of the two is approved
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMjB9","finality":"final"}}'
+
+# the agent asks for 0.5 NEAR
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogOH0=","finality":"final"}}'
+
+# the owner freezes every agent
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogNn0=","finality":"final"}}'
+
+# the owner tries to approve while frozen
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogNn0=","finality":"final"}}'
+
+# the owner lifts the freeze
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_kill_switch","args_base64":"e30=","finality":"final"}}'
+
+# the owner approves it
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMTd9","finality":"final"}}'
+
+# the owner adds a vendor that does not exist
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"eyJhZ2VudF9pZCI6ICJib3VuZC1hZ2VudC50ZXN0bmV0In0=","finality":"final"}}'
+
+# the agent asks to pay the vendor that does not exist
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogOX0=","finality":"final"}}'
+
+# the owner approves it
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMTh9","finality":"final"}}'
+
+# the owner removes the vendor that does not exist
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"eyJhZ2VudF9pZCI6ICJib3VuZC1hZ2VudC50ZXN0bmV0In0=","finality":"final"}}'
+
+```
+
 Every one of these is on testnet. Nothing here has been run on mainnet, and
 nothing here can be: there is no mainnet deployment. The branch column says
 which. The mainnet branch of this project is not built.
@@ -249,7 +319,9 @@ which. The mainnet branch of this project is not built.
 | --- | --- |
 | Contract, policy engine, receipts | Real, on testnet, live |
 | Denial reasons on receipts | Real, written by the contract |
+| The receipt count | Every decision on chain. Nine of them are tool runs, memoed "stranger", "the agent cli against a stranger" or "probe". The counts are in [docs/CLAIMS.md](docs/CLAIMS.md) |
 | Figures in the console | Read live from the public testnet RPC at page open |
+| The console feed | Every receipt the page read, not a slice of them. The count says "30 of 30" |
 | Console on RPC failure | Last good view, labelled stale. Never a guessed number |
 | Demo video | Animated from real chain state, silent, captions only |
 | Counterparty signals | The blocklist and the vendor allowlist the owner sets. No live risk feed, no account age, no code change watch |
@@ -261,7 +333,7 @@ which. The mainnet branch of this project is not built.
 Things this does not do, in the open:
 
 - There is no counterparty check service. The owner sets the blocklist and the vendor allowlist, and the policy engine reads them. Nothing scores the receiver itself: not how old the account is, not whether it is a contract or whether its code changed, not how much this agent has paid it before, and no blocklist that other agents can report to. The account age needs an indexer rather than the RPC, and a shared blocklist would change the state layout of a contract that is already live.
-- The contract cannot be upgraded in place. It has no migrate method, so a fix needs a redeploy that carries the state over. One has already been done, on 2026-11-05, and it kept every receipt.
+- The contract cannot be upgraded in place. It has no migrate method, so a fix needs a redeploy that carries the state over. Two redeploys have been done and both kept every receipt. The one that produced the code on chain is the transaction in the evidence table.
 - The receipts are never pruned. Every decision is kept forever, and the contract pays for the storage.
 - The runner and the owner are the same account on testnet, so there is no second reviewer yet. The contract supports a separate runner account.
 - The demo vendor contract counts the deposit it was given rather than the price it kept, so its `taken` figure is too high.
@@ -303,9 +375,13 @@ cd policy && cargo test
 cd ../contract && cargo test
 ```
 
-The console needs no build. Open `web/index.html` in a browser, or visit https://spendguard-oxunify.vercel.app.
+The console needs no build. Open `web/index.html` in a browser, or visit https://near-bound.vercel.app.
 
-The wasm on testnet was built with:
+The wasm on testnet was built from commit `187fd92843d3a73702e19e95d13a06c36661c8a2`.
+The CI artifact of that commit is the wasm on chain, byte for byte, and the
+sha256 of both is in [docs/CLAIMS.md](docs/CLAIMS.md). A later commit that
+only changes this README, the demo script or the console does not change the
+wasm, so the code hash on chain stays the same.
 
 ```bash
 export CARGO_HOME=/tmp/bound-cargo

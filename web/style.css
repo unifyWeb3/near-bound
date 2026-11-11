@@ -884,6 +884,9 @@ button:disabled {
 .step {
   display: flex;
   gap: 18px;
+  /* Without this the long command lines inside the code blocks set the width
+     of the whole page, and the steps get cut off on a laptop screen. */
+  min-width: 0;
   background: var(--panel);
   border: 1px solid var(--line);
   border-radius: 16px;
