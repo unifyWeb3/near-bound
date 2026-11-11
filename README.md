@@ -12,6 +12,12 @@
 
 This repository is `near-bound`. The product is SpendGuard. It was built at NEAR HACKATHON, it runs on testnet, and it is not audited.
 
+The submitted state is the tag `submission-v1`, which points at the commit that
+carries this README. The wasm on chain was built from commit
+`187fd92843d3a73702e19e95d13a06c36661c8a2`, and the sha256 of that artifact is
+the code hash on chain, so the deployed contract is this source and not a
+rebuild of it. The sha256 is in [docs/CLAIMS.md](docs/CLAIMS.md).
+
 An AI agent that pays for API or compute credits carries a credential with money behind it. Give it the API key and it has no ceiling. Tell it the limit in a prompt and the instruction competes with every other instruction in the context window. SpendGuard moves the decision out of the agent and into a NEAR contract, so the agent can ask to spend and the chain decides.
 
 ## Table of contents
