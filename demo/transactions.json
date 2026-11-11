@@ -2,78 +2,136 @@
   "transactions": [
     {
       "what": "the contract is upgraded in place, the state carried over",
-      "hash": "64y7jtaqqbpH8s3F8VjC7CML8dFAo35aVHNy2LPLLu1T",
-      "result": "deployed, code hash 8iCAhJCsD8HWFHq5TcEqJzDQ5tuES5GbfvYkVESkJgA7"
+      "hash": "Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls",
+      "result": "deployed, the code hash and the sha256 of the wasm are written in this table",
+      "check": {
+        "kind": "account",
+        "account": "contract",
+        "code_hash": true
+      }
     },
     {
       "what": "the agent is given NEAR for gas",
       "hash": "HnHYC226AEEaM4L8kuekL86jTp1ur8bnfQEATCpcfsPG",
-      "result": "the agent account can make a call"
+      "result": "the agent account can make a call",
+      "check": {
+        "kind": "account",
+        "account": "agent"
+      }
     },
     {
       "what": "the first of two requests for 1 NEAR",
       "hash": "EEHzgVkt4HXTHCriHq335fpP97Kp6ZQ9M2EmSXfHKjqS",
-      "result": "request 10"
+      "result": "request 10",
+      "check": {
+        "kind": "request",
+        "id": 10
+      }
     },
     {
       "what": "the second of two requests for 1 NEAR",
       "hash": "GebCsWA4K5S2GHfM1QzmymoQ2p8d1qp6hBsKAcfMsmDb",
-      "result": "request 11"
+      "result": "request 11",
+      "check": {
+        "kind": "request",
+        "id": 11
+      }
     },
     {
       "what": "the first of the two is approved",
       "hash": "HBD7hJL9bv5Npir8T9TtNMzJ2DJf4hpbUDWNvQWU6bGW",
-      "result": "receipt 19, Approved"
+      "result": "receipt 19, Approved",
+      "check": {
+        "kind": "receipt",
+        "id": 19
+      }
     },
     {
       "what": "the second of the two is approved",
       "hash": "6MKVUN9QoLd6y92nrgrRYfrVWR2DmgCpbRQnnfXb1JEv",
-      "result": "receipt 20, Denied BudgetExceeded"
+      "result": "receipt 20, Denied BudgetExceeded",
+      "check": {
+        "kind": "receipt",
+        "id": 20
+      }
     },
     {
       "what": "the agent asks for 0.5 NEAR",
       "hash": "HEBxWQZFBHuJNcaZCGcLtaeRJmU8nWVkkgX6sSkhqHPi",
-      "result": "request 8"
+      "result": "request 8",
+      "check": {
+        "kind": "request",
+        "id": 8
+      }
     },
     {
       "what": "the owner freezes every agent",
       "hash": "GgmPg2rmYi31ZQuDahyhV7PND8a2bfjFQdW6qvUiaWSX",
-      "result": "the kill switch is on"
+      "result": "the kill switch is on",
+      "check": {
+        "kind": "request",
+        "id": 6
+      }
     },
     {
       "what": "the owner tries to approve while frozen",
       "hash": "BsoBVYQXyg1NdvFmURCACBDK6J96PsdSGq8v2bELS8YY",
-      "result": "refused, no receipt, the request stays open"
+      "result": "refused, no receipt, the request stays open",
+      "check": {
+        "kind": "request",
+        "id": 6
+      }
     },
     {
       "what": "the owner lifts the freeze",
       "hash": "4dWyQA12DyjUP57XJGocu7iPHYDJpyk9UnTSz4bzwcpD",
-      "result": "the kill switch is off"
+      "result": "the kill switch is off",
+      "check": {
+        "kind": "kill_switch"
+      }
     },
     {
       "what": "the owner approves it",
       "hash": "2jPzCn18sed5EXNorsSdbyDcDhkVfEATr7AgHTMiUZ2v",
-      "result": "receipt 17, Approved"
+      "result": "receipt 17, Approved",
+      "check": {
+        "kind": "receipt",
+        "id": 17
+      }
     },
     {
       "what": "the owner adds a vendor that does not exist",
       "hash": "6HL6VHy1zzozfDSmLeqmYFcKL1sxWawo6Yvr56CBquA8",
-      "result": "the allowlist has ghost-vendor.testnet"
+      "result": "the allowlist has ghost-vendor.testnet",
+      "check": {
+        "kind": "policy"
+      }
     },
     {
       "what": "the agent asks to pay the vendor that does not exist",
       "hash": "Cc6rmKhH5gAa89cqARW9zhy2jiFbEGrDnZtm9RmKA9yf",
-      "result": "request 9"
+      "result": "request 9",
+      "check": {
+        "kind": "request",
+        "id": 9
+      }
     },
     {
       "what": "the owner approves it",
       "hash": "4JTiK48kgmGwLJxjjtdDLEZn7gZhvGVKpqJgT7sXvQRm",
-      "result": "receipt 18, Failed TransferFailed, the budget came back"
+      "result": "receipt 18, Failed TransferFailed, the budget came back",
+      "check": {
+        "kind": "receipt",
+        "id": 18
+      }
     },
     {
       "what": "the owner removes the vendor that does not exist",
       "hash": "3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S",
-      "result": "the allowlist is back to one vendor"
+      "result": "the allowlist is back to one vendor",
+      "check": {
+        "kind": "policy"
+      }
     }
   ]
 }

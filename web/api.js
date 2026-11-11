@@ -220,9 +220,12 @@ export async function getReceipts() {
 /**
  * Load the whole readable state in one pass.
  *
+ * The page shows every receipt it read, so the feed count reads "30 of 30" and
+ * not "20 of 30". A caller can still ask for fewer.
+ *
  * @param {number} [limit] How many of the newest receipts to keep.
  */
-export async function loadState(limit = 20) {
+export async function loadState(limit = Infinity) {
   const [policy, ids, ledger, treasury, killSwitch] = await Promise.all([
     getPolicy(),
     getRequestIds(),

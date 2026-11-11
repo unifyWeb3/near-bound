@@ -2,7 +2,11 @@
 # Ask the contract to spend, the way an agent would.
 #
 #   demo/agent.sh --contract <account> --agent <account> --vendor <account> \
-#                 --amount <yoctoNEAR> --nonce <n> --key <key file> [--memo <text>]
+#                 --amount <yoctoNEAR> --key <key file> [--nonce <n>] [--memo <text>]
+#
+# The nonce is optional. The contract refuses a nonce it has already seen, so
+# the script reads the agent's last nonce from the policy and uses the next
+# one. Pass --nonce to send a specific one.
 #
 # The amount goes in as base64 encoded JSON. The NEAR CLI reads json-args into
 # a JSON value, and a number bigger than 2^53 comes back as a float, so
@@ -31,12 +35,12 @@ while [ $# -gt 0 ]; do
     --nonce) NONCE="$2"; shift 2 ;;
     --key) KEY="$2"; shift 2 ;;
     --memo) MEMO="$2"; shift 2 ;;
-    -h|--help) sed -n '2,14p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,18p' "$0"; exit 0 ;;
     *) echo "unknown option $1" >&2; exit 2 ;;
   esac
 done
 
-for name in CONTRACT AGENT VENDOR AMOUNT NONCE KEY; do
+for name in CONTRACT AGENT VENDOR AMOUNT KEY; do
   if [ -z "${!name}" ]; then
     echo "--${name,,} is required" >&2
     exit 2
@@ -83,6 +87,34 @@ frac = str(value % 10**24).zfill(24).rstrip('0')
 print(f'{whole}.{frac}' if frac else whole)
 "
 }
+
+# The nonce the agent used last. The contract refuses a nonce that is not
+# above it, so the script reads it and asks for the next one.
+last_nonce() {
+  near contract call-function as-read-only "$CONTRACT" get_policy \
+    json-args "{\"agent_id\":\"$AGENT\"}" network-config testnet now 2>&1 \
+    | clean \
+    | python3 -c "
+import json, sys
+raw = sys.stdin.read()
+marker = 'return value (printed to stdout):'
+at = raw.find(marker)
+if at < 0:
+    raise SystemExit(1)
+value, _ = json.JSONDecoder().raw_decode(raw[at + len(marker):].strip())
+print(int(value['last_nonce']))
+"
+}
+
+if [ -z "$NONCE" ]; then
+  LAST=$(last_nonce)
+  if [ -z "$LAST" ]; then
+    echo "could not read the agent's last nonce from $CONTRACT" >&2
+    exit 2
+  fi
+  NONCE=$((LAST + 1))
+  echo "the last nonce for $AGENT was $LAST, asking with $NONCE"
+fi
 
 BEFORE=$(count_receipts)
 BEFORE=${BEFORE:-0}

@@ -31,6 +31,10 @@ AGENT = "bound-agent.testnet"
 VENDOR = "bound-vendor.testnet"
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
+# The commit whose CI artifact is the wasm on chain. The artifact for this
+# commit has the sha256 of the deployed code, which is in the claims below.
+WASM_COMMIT = "187fd92843d3a73702e19e95d13a06c36661c8a2"
+
 
 def b58decode(text):
     number = 0
@@ -108,6 +112,49 @@ def sha(text):
     return hashlib.sha256(text.encode()).hexdigest()
 
 
+def rpc_curl(params):
+    """A one line curl that reads the chain, with no key and no explorer."""
+    body = json.dumps(
+        {"jsonrpc": "2.0", "id": "1", "method": "query", "params": params},
+        separators=(",", ":"),
+    )
+    return f"curl -s -H 'Content-Type: application/json' {RPC} -d '{body}'"
+
+
+def call_curl(method_name, args):
+    return rpc_curl(
+        {
+            "request_type": "call_function",
+            "account_id": CONTRACT,
+            "method_name": method_name,
+            "args_base64": base64.b64encode(json.dumps(args).encode()).decode(),
+            "finality": "final",
+        }
+    )
+
+
+def account_curl(account_id):
+    return rpc_curl(
+        {"request_type": "view_account", "account_id": account_id, "finality": "final"}
+    )
+
+
+def check_curl(check):
+    """The read that shows what the transaction left behind."""
+    kind = check.get("kind")
+    if kind == "receipt":
+        return call_curl("get_receipt", {"receipt_id": check["id"]})
+    if kind == "request":
+        return call_curl("get_request", {"request_id": check["id"]})
+    if kind == "policy":
+        return call_curl("get_policy", {"agent_id": AGENT})
+    if kind == "kill_switch":
+        return call_curl("get_kill_switch", {})
+    if kind == "account":
+        return account_curl(AGENT if check.get("account") == "agent" else CONTRACT)
+    return None
+
+
 def collect():
     contract = account(CONTRACT)
     agent = account(AGENT)
@@ -145,6 +192,7 @@ def collect():
         "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         "code_hash": code_hash,
         "code_sha256": code_sha,
+        "wasm_commit": WASM_COMMIT,
         "contract_balance_yocto": contract["amount"],
         "contract_storage_bytes": contract["storage_usage"],
         "contract_key": (contract_key or {}).get("public_key"),
@@ -173,6 +221,7 @@ def collect():
 CLAIM_ROWS = [
     ("contract code hash", "code_hash", "the chain", "near contract view-account"),
     ("contract code sha256", "code_sha256", "the chain", "near contract view-account"),
+    ("the commit the deployed wasm was built from", "wasm_commit", "the CI artifact", "the artifact of this commit in the Actions run"),
     ("contract balance", "contract_balance_yocto", "the chain", "near contract view-account"),
     ("contract storage bytes", "contract_storage_bytes", "the chain", "near contract view-account"),
     ("contract full access key", "contract_key", "the chain", "near contract view-access-key-list"),
@@ -239,8 +288,10 @@ def render(data):
     lines.append("")
     lines.append("## The first twelve receipts")
     lines.append("")
-    lines.append("These are the receipts that were on chain before the contract was upgraded on 2026-11-11.")
-    lines.append("Their sha256 is over the receipt as the chain returns it, with the keys in order.")
+    lines.append("These are the first twelve receipts. They were written before the contract")
+    lines.append("was upgraded, and the current build kept every one of them: the sha256")
+    lines.append("below is recomputed from the chain, and")
+    lines.append("`python3 scripts/claims.py --check` fails if one of them changed.")
     lines.append("")
     lines.append("| Receipt | sha256 |")
     lines.append("| --- | --- |")
@@ -253,6 +304,9 @@ def render(data):
     lines.append("| --- | --- | --- |")
     for item in data["transactions"]:
         lines.append(f"| {item['what']} | `{item['hash']}` | {item['result']} |")
+    lines.append("")
+    lines.append("Each of these has a curl in the evidence table of the README, one read")
+    lines.append("of the public testnet RPC that shows what the transaction left behind.")
     lines.append("")
     lines.append("## Where the numbers come from")
     lines.append("")
@@ -289,7 +343,29 @@ def evidence_section(data):
     lines.append("| --- | --- | --- | --- |")
     for item in data["transactions"]:
         link = f"[{item['hash'][:12]}](https://explorer.testnet.near.org/transactions/{item['hash']})"
-        lines.append(f"| {item['what']} | {link} | {item['result']} | {BRANCHES.get(item['what'], 'testnet only')} |")
+        result = item["result"]
+        check = item.get("check") or {}
+        if check.get("code_hash"):
+            result = (
+                f"deployed, code hash {data['code_hash']}, "
+                f"sha256 {data['code_sha256']}"
+            )
+        lines.append(f"| {item['what']} | {link} | {result} | {BRANCHES.get(item['what'], 'testnet only')} |")
+    lines.append("")
+    lines.append("Every row can be checked with the public testnet RPC, with no key and no")
+    lines.append("explorer. Nearblocks answers a script with a 403, and the public RPC has")
+    lines.append("no transaction status method, so each line below reads the state the")
+    lines.append("transaction left behind. Run any of them as it is:")
+    lines.append("")
+    lines.append("```bash")
+    for item in data["transactions"]:
+        curl = check_curl(item.get("check") or {})
+        if not curl:
+            continue
+        lines.append(f"# {item['what']}")
+        lines.append(curl)
+        lines.append("")
+    lines.append("```")
     lines.append("")
     lines.append("Every one of these is on testnet. Nothing here has been run on mainnet, and")
     lines.append("nothing here can be: there is no mainnet deployment. The branch column says")
