@@ -183,7 +183,9 @@ export async function getLedger(deployment, cache, limit = PAGE_SIZE) {
   const ids = [];
   for (let id = 0; id < total; id += 1) ids.push(id);
 
-  const missing = cache.missing(ids).slice(0, Math.max(limit, 0));
+  // The newest decisions are the ones a reader came for, so the ids that are
+  // not read yet are taken from the top.
+  const missing = cache.missing(ids).sort((a, b) => b - a).slice(0, Math.max(limit, 0));
   const { receipts, errors } = missing.length ? await readReceipts(deployment, missing) : { receipts: [], errors: 0 };
   for (const receipt of receipts) cache.set(receipt.receipt_id, receipt);
   cache.save(deployment);

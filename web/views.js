@@ -61,7 +61,7 @@ export function renderStats(state) {
     ['Under management', formatNear(state.treasury ?? 0n), 'held by the contract'],
     ['Approved', formatCount(approved), 'reads on chain'],
     ['Blocked', formatCount(denied + failed), 'never paid out'],
-    ['Allowed value', formatNear(allowedValue), 'total that settled'],
+    ['Allowed value', formatNear(allowedValue), 'moved to the counterparty'],
     ['Protected value', formatNear(protectedValue), 'refused by the policy'],
     ['Decisions', formatCount(ledger.total), 'for this agent'],
   ];

@@ -33,7 +33,7 @@ f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e  -
 That is the same number as the code hash on chain, decoded from base58. The
 judge evidence below prints the same command for every other figure.
 
-An AI agent that pays for API or compute credits carries a credential with money behind it. Give it the API key and it has no ceiling. Tell it the limit in a prompt and the instruction competes with every other instruction in the context window. SpendGuard moves the decision out of the agent and into a NEAR contract, so the agent can ask to spend and the chain decides.
+An AI agent that has to pay for API or compute credits carries a credential with money behind it. Give it the API key and it has no ceiling. Tell it the limit in a prompt and the instruction competes with every other instruction in the context window. SpendGuard moves the decision out of the agent and into a NEAR contract, so the agent can ask to spend and the chain decides.
 
 This is a **NEAR Hackathon `security`** entry: spending limits, a policy engine
 and a sandboxed wallet, with the scope carried by the access key itself. It is
@@ -201,9 +201,9 @@ visible, and the gap closes on its own when the transfer settles.
 | --- | --- |
 | Contract and treasury | `bound-testnet-97685.testnet` |
 | Agent | `bound-agent.testnet` |
-| Vendor | `bound-vendor.testnet` |
+| Counterparty | `bound-vendor.testnet` | the account the contract pays |
 | Receipts | the counts are in [docs/CLAIMS.md](docs/CLAIMS.md) |
-| Live policy | 5 NEAR an hour, 1 NEAR a payment, 5 payments a minute, one vendor |
+| Live policy | 5 NEAR an hour, 1 NEAR a payment, 5 payments a minute, one counterparty |
 
 Three receipts show the contract doing the work, and each one is a
 transaction anybody can read:
@@ -371,6 +371,7 @@ which. The mainnet branch of this project is not built.
 | The console feed | Every receipt the page read, not a slice of them. The count says "30 of 30" |
 | Console on RPC failure | Last good view, labelled stale. Never a guessed number |
 | Demo video | Animated from real chain state, silent, captions only |
+| What the contract buys | Nothing. It moves NEAR to the counterparty account under the policy. The demo counterparty contract is not on the payment path |
 | Counterparty signals | The blocklist and the vendor allowlist the owner sets. No live risk feed, no account age, no code change watch |
 | Operator side | The NEAR CLI. No browser wallet, no revoke button |
 | Audit | Not audited. Testnet only. No real money has moved |
@@ -383,7 +384,7 @@ Things this does not do, in the open:
 - The contract cannot be upgraded in place. It has no migrate method, so a fix needs a redeploy that carries the state over. Two redeploys have been done and both kept every receipt. The one that produced the code on chain is the transaction in the evidence table.
 - The receipts are never pruned. Every decision is kept forever, and the contract pays for the storage.
 - The runner and the owner are the same account on testnet, so there is no second reviewer yet. The contract supports a separate runner account.
-- The demo vendor contract counts the deposit it was given rather than the price it kept, so its `taken` figure is too high.
+- The contract moves NEAR to the counterparty account. It does not call a metered service, so nothing in a receipt proves the counterparty served anything. The demo contract in `demo/vendor/` shows what a metered call looks like, and it is not on the payment path.
 - The NEAR CLI is the operator side, so there is no browser wallet and no revoke button.
 
 ## Engineering decisions
@@ -407,7 +408,7 @@ Things this does not do, in the open:
 ```
 contract/     Bound contract, deployed on testnet, unit tested
 policy/       Pure policy engine, unit tested
-demo/         Protocol arm script and the vendor stand-in
+demo/         Protocol arm script and the demo counterparty
 web/          The SpendGuard console, a static page
 ```
 
