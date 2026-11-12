@@ -50,6 +50,7 @@ const store = createStore({
   view: 'overview',
   filter: { outcome: 'all', text: '' },
   ledger: { receipts: [], total: 0, errors: 0, unread: 0 },
+  visible: PAGE_SIZE,
   policy: null,
   treasury: 0n,
   killSwitch: false,
@@ -131,7 +132,7 @@ async function onRoute() {
 }
 
 /** Read the chain and paint what came back. */
-async function refresh({ more = false } = {}) {
+async function refresh() {
   const state = store.get();
   store.set({ loading: true });
   $('refresh').disabled = true;
@@ -140,7 +141,7 @@ async function refresh({ more = false } = {}) {
       getPolicy(state.deployment),
       getTreasuryBalance(state.deployment),
       getKillSwitch(state.deployment),
-      getLedger(state.deployment, cache, more ? PAGE_SIZE * 4 : PAGE_SIZE),
+      getLedger(state.deployment, cache),
       getRequests(state.deployment),
     ]);
     store.set({
@@ -305,7 +306,11 @@ function renderDeploymentPanel() {
 /** Wire the buttons. */
 function wire() {
   $('refresh').addEventListener('click', () => refresh());
-  $('ledger-more').addEventListener('click', () => refresh({ more: true }));
+  $('ledger-more').addEventListener('click', () => {
+    const state = store.get();
+    const next = store.set({ visible: state.visible + PAGE_SIZE });
+    renderLedger(next);
+  });
   $('wallet-button').addEventListener('click', () => handleWallet());
   $('deployment-toggle').addEventListener('click', () => {
     const panel = $('deployment-panel');

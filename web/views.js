@@ -8,6 +8,7 @@
 
 import {
   formatNear,
+  PAGE_SIZE,
   formatYocto,
   getReceipt,
   getRequest,
@@ -119,7 +120,8 @@ export function renderLedger(state) {
   const host = $('ledger-list');
   host.replaceChildren();
   const filter = state.filter ?? {};
-  const receipts = state.ledger.receipts.filter((receipt) => {
+  const visible = state.visible ?? 25;
+  const matched = state.ledger.receipts.filter((receipt) => {
     if (filter.outcome && filter.outcome !== 'all' && receipt.outcome !== filter.outcome) return false;
     if (filter.reason && filter.reason !== 'all' && (receipt.reason ?? 'Unlabelled') !== filter.reason) return false;
     if (filter.text) {
@@ -129,21 +131,19 @@ export function renderLedger(state) {
     return true;
   });
 
-  $('ledger-count').textContent = `${receipts.length} shown of ${state.ledger.total} on chain`;
+  $('ledger-count').textContent = `${matched.length} for this agent, of ${state.ledger.total} on chain`;
   $('ledger-unread').textContent = state.ledger.unread
     ? `${state.ledger.unread} receipts of this agent are not read yet`
     : '';
 
-  if (receipts.length === 0) {
+  if (matched.length === 0) {
     host.append(el('p', 'empty-state', 'No decisions match. Clear the filter, or point the console at another agent.'));
   }
-  for (const receipt of receipts) host.append(renderReceipt(receipt));
+  for (const receipt of matched.slice(0, visible)) host.append(renderReceipt(receipt));
 
   const more = $('ledger-more');
-  more.hidden = state.ledger.unread === 0;
-  more.textContent = state.ledger.unread
-    ? `Read ${state.ledger.unread} more`
-    : '';
+  more.hidden = matched.length <= visible;
+  more.textContent = `Show ${Math.min(PAGE_SIZE, matched.length - visible)} more`;
 }
 
 /** The filters of the ledger. */
