@@ -1,380 +1,332 @@
+/**
+ * The shell of the console: the router, the reads, the deployment switcher.
+ */
+
 import {
-  CONFIG,
-  formatNear,
-  loadState,
-  timestampSeconds,
+  PAGE_SIZE,
+  getKillSwitch,
+  getLedger,
+  getPolicy,
+  getRequests,
+  getTreasuryBalance,
 } from './api.js';
+import {
+  createReceiptCache,
+  createStore,
+  isAccountId,
+  readDeployment,
+  writeDeployment,
+} from './state.js';
+import {
+  connectWallet,
+  connectedAccount,
+  readAccountState,
+  sendSigned,
+  signAndSend,
+  signedTransactions,
+} from './wallet.js';
+import { $, el } from './ui.js';
+import {
+  renderCharts,
+  renderEnable,
+  renderHero,
+  renderJudge,
+  renderLedger,
+  renderLedgerFilters,
+  renderPolicy,
+  renderProtocolList,
+  renderReceiptView,
+  renderRequestView,
+  renderRequests,
+  renderStats,
+} from './views.js';
 
-const $ = (id) => document.getElementById(id);
+const deployment = readDeployment();
+const cache = createReceiptCache();
+cache.load(deployment);
 
-function el(tag, className, text) {
-  const node = document.createElement(tag);
-  if (className) node.className = className;
-  if (text !== undefined && text !== null) node.textContent = text;
-  return node;
-}
-
-function count(list, selector) {
-  return list.filter(selector).length;
-}
-
-function sumYocto(list, selector) {
-  return list.reduce((acc, item) => acc + BigInt(selector(item) ?? 0n), 0n);
-}
-
-/** Shorten a big integer count for display. */
-function formatCount(value) {
-  const n = Number(value);
-  return Number.isFinite(n) ? n.toLocaleString('en-US') : String(value);
-}
-
-/** Group receipts by day label, in the reader's own timezone. */
-function byDay(receipts) {
-  const groups = new Map();
-  for (const r of receipts) {
-    const date = new Date(timestampSeconds(r.created_at) * 1000);
-    const key = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    groups.set(key, (groups.get(key) ?? 0) + 1);
-  }
-  return [...groups.entries()].sort(([a], [b]) => a.localeCompare(b));
-}
-
-/** Group denials by reason. */
-function byReason(receipts) {
-  const groups = new Map();
-  for (const r of receipts.filter((x) => x.outcome === 'Denied')) {
-    const key = r.reason || 'Unlabelled';
-    groups.set(key, (groups.get(key) ?? 0) + 1);
-  }
-  return [...groups.entries()].sort(([, a], [, b]) => b - a);
-}
-
-/** The enable steps. */
-const STEPS = [
-  {
-    title: 'Create three funded testnet accounts',
-    body: 'You need an owner account (the treasury), an agent account, and a vendor account. Get testnet NEAR free from the faucet. The owner deploys the contracts.',
-    cmd: 'near create-account bound-owner.testnet --use-account YOUR_MAIN_ACCOUNT --network-config testnet autogenerate-new-keypair save-to-legacy-keychain send',
+const store = createStore({
+  deployment,
+  view: 'overview',
+  filter: { outcome: 'all', text: '' },
+  ledger: { receipts: [], total: 0, errors: 0, unread: 0 },
+  policy: null,
+  treasury: 0n,
+  killSwitch: false,
+  requests: [],
+  loadedAt: null,
+  loading: false,
+  error: null,
+  stale: false,
+  wallet: null,
+  actions: {
+    approve: (requestId) => signCall('approve_request', [requestId]),
+    reject: (requestId, reason) => signCall('reject_request', [requestId, reason]),
   },
-  {
-    title: 'Deploy the policy contract and the vendor',
-    body: 'Two wasm files, built from the repository. The contract holds the money and the rules. The vendor is a paid API stand in for the demo.',
-    cmd: "cargo near build --manifest-path contract/Cargo.toml\ncargo near build --manifest-path demo/vendor/Cargo.toml\nnear contract deploy OWNER use-file contract/target/near/bound_contract.wasm with-init-call new json-args '{}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send",
-  },
-  {
-    title: 'Register the agent with a policy',
-    body: 'Budget, single spend cap, rate limit per minute and the vendor allowlist. One command, one transaction, signed by the owner. The amounts go in as base64 because the CLI turns a big JSON number into a float.',
-    cmd: 'near contract call-function as-transaction OWNER register_agent base64-args "$(printf \'{"agent_id":"AGENT","budget":5000000000000000000000000,"period_seconds":3600,"vendors":["VENDOR"],"max_single_spend":1000000000000000000000000,"rate_limit":5}\' | base64 -w0)" prepaid-gas \'100.0 Tgas\' attached-deposit \'0 NEAR\' sign-as OWNER network-config testnet sign-with-legacy-keychain send',
-  },
-  {
-    title: 'Give the agent a scoped key',
-    body: 'One receiver, one method, a gas cap. The key cannot call the vendor, cannot carry a deposit, and cannot afford an expensive call. Give the agent a little NEAR for gas as well, the CLI checks the balance before it sends.',
-    cmd: 'near account add-key AGENT grant-function-call-access --allowance 0.2near --contract-account-id OWNER --function-names request_spend autogenerate-new-keypair --signature-scheme ed25519 save-to-legacy-keychain network-config testnet sign-with-legacy-keychain send',
-  },
-  {
-    title: 'The agent asks to spend',
-    body: 'Hard checks run inside the contract. A stranger, a budget breach or a rate breach is written as a denial with evidence, never silently accepted.',
-    cmd: 'near contract call-function as-transaction OWNER request_spend base64-args "$(printf \'{"agent_id":"AGENT","vendor":"VENDOR","amount":1000000000000000000000000,"nonce":1,"memo":"reference price lookup"}\' | base64 -w0)" prepaid-gas \'20.0 Tgas\' attached-deposit \'0 NEAR\' sign-as AGENT network-config testnet sign-with-access-key-file KEY send',
-  },
-  {
-    title: 'The owner approves, money moves, receipt exists',
-    body: 'A human or a runner decides. The transfer is made by the contract, and both outcomes are receipts with reason, rule and evidence.',
-    cmd: 'near contract call-function as-transaction OWNER approve_request json-args \'{"request_id":0}\' prepaid-gas \'100.0 Tgas\' attached-deposit \'0 NEAR\' sign-as OWNER network-config testnet sign-with-legacy-keychain send',
-  },
-  {
-    title: 'Watch the feed, read the receipts',
-    body: 'Every decision appears here with the rule that blocked it. A denial is a legitimate outcome, not an error message.',
-    cmd: 'curl -s -X POST https://test.rpc.fastnear.com -H \'Content-Type: application/json\' -d \'{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"OWNER","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}\'',
-  },
-  {
-    title: 'Revoke the agent instantly',
-    body: 'Delete the scoped key. The agent cannot sign a request at all.',
-    cmd: 'near account delete-keys AGENT public-keys PUBLIC_KEY network-config testnet sign-with-legacy-keychain send',
-  },
-];
+});
 
-/** The four protocol refusals with the exact error text. */
-const PROTOCOL_LIST = [
-  { text: 'A different method', error: "Transaction method name <approve_request> isn't allowed by the access key." },
-  { text: 'A different contract', error: "Transaction for <vendor> doesn't match the access key for <contract>." },
-  { text: 'A deposit of one yoctoNEAR', error: 'Having a deposit with a function call action is not allowed with a function call access key.' },
-  { text: 'A 100 Tgas call it cannot afford', error: 'Access Key ... does not have enough allowance ... to cover transaction cost ...' },
-];
+/** The views the router knows, and the element each one lives in. */
+const VIEWS = {
+  overview: 'view-overview',
+  policy: 'view-policy',
+  requests: 'view-requests',
+  ledger: 'view-ledger',
+  receipt: 'view-receipt',
+  request: 'view-receipt',
+  enable: 'view-enable',
+  judge: 'view-judge',
+};
 
-/** Render the hero panel from the live state. */
-function renderHero(state) {
-  const { policy } = state;
-  $('hero-remaining').textContent = formatNear(policy.remaining);
-  $('hero-budget').textContent = formatNear(policy.budget);
-  $('hero-maxsingle').textContent = formatNear(policy.max_single_spend);
-  $('hero-ratelimit').textContent = `${policy.rate_limit} per minute`;
-  const budget = BigInt(policy.budget);
-  const pct = budget === 0n ? 0 : Number((BigInt(policy.spent) * 10000n) / budget) / 100;
-  $('hero-fill').style.width = `${Math.max(2, 100 - pct)}%`;
-  const approved = state.receipts.filter((r) => r.outcome === 'Approved');
-  const latest = approved[0];
-  $('hero-receiptid').textContent = latest ? `№ ${latest.receipt_id}` : 'none yet';
+function parseRoute() {
+  const hash = window.location.hash.replace(/^#\/?/, '');
+  const [name, param] = hash.split('/');
+  if (!name) return { view: 'overview' };
+  if (!VIEWS[name]) return { view: 'overview' };
+  return { view: name, param };
 }
 
-/** Render the stat grid and the governed sentence. */
-function renderStats(state) {
-  const { policy, receipts, totalReceipts } = state;
-  const denied = count(receipts, (r) => r.outcome === 'Denied');
-  const failed = count(receipts, (r) => r.outcome === 'Failed');
-  const approved = count(receipts, (r) => r.outcome === 'Approved');
-  const allowedValue = sumYocto(receipts, (r) => (r.outcome === 'Approved' ? r.amount : 0n));
-  const protectedValue = sumYocto(receipts, (r) => (r.outcome === 'Denied' ? r.amount : 0n));
-
-  const buttons = [
-    ['Under management', formatNear(state.treasury), 'held by the contract'],
-    ['Approved', formatCount(approved), 'reads on chain'],
-    ['Blocked', formatCount(denied + failed), 'never paid out'],
-    ['Allowed value', formatNear(allowedValue), 'total that settled'],
-    ['Protected value', formatNear(protectedValue), 'refused by the policy'],
-    ['Decisions', formatCount(totalReceipts), 'for this agent'],
-  ];
-
-  const host = $('stats-grid');
-  host.replaceChildren();
-  for (const [label, value, note] of buttons) {
-    const card = el('div', 'stat');
-    card.append(el('div', 'stat-label', label));
-    card.append(el('div', 'stat-value', value));
-    card.append(el('div', 'stat-note', note));
-    host.append(card);
+function showView(view) {
+  // A route can share an element with another route, so the visible set is
+  // worked out first and the elements are then shown or hidden once.
+  const visible = new Set(
+    Object.entries(VIEWS)
+      .filter(([name]) => name === view)
+      .map(([, id]) => id),
+  );
+  for (const id of new Set(Object.values(VIEWS))) {
+    const node = document.getElementById(id);
+    if (node) node.hidden = !visible.has(id);
   }
-
-  const spent = BigInt(policy.spent);
-  const sentence = el('p', 'governed');
-  const frozen = state.killSwitch ? 'Kill switch on, every agent frozen.' : 'Kill switch off.';
-  if (spent > 0n) {
-    sentence.textContent = `${frozen} Governed since ${new Date(timestampSeconds(policy.period_start) * 1000).toLocaleDateString()}. ${formatNear(spent)} allowed through this hour.`;
-  } else {
-    sentence.textContent = `${frozen} Governed since ${new Date(timestampSeconds(policy.period_start) * 1000).toLocaleDateString()}. The current hour is clean.`;
-  }
-  host.append(sentence);
-}
-
-/** Render one labelled bar chart. */
-function barChart(host, rows, total) {
-  host.replaceChildren();
-  if (rows.length === 0) {
-    host.append(el('p', 'empty-state', 'Nothing to chart yet.'));
-    return;
-  }
-  for (const [label, value] of rows) {
-    const row = el('div', 'bar-row');
-    row.append(el('div', 'bar-label', String(label)));
-    const track = el('div', 'bar-track');
-    const fill = el('div', 'bar-fill');
-    fill.style.width = total ? `${Math.round((value / total) * 100)}%` : '0%';
-    track.append(fill);
-    row.append(track);
-    row.append(el('div', 'bar-value', String(value)));
-    host.append(row);
+  for (const link of document.querySelectorAll('[data-route]')) {
+    const active = link.getAttribute('data-route') === view;
+    if (active) link.setAttribute('aria-current', 'page');
+    else link.removeAttribute('aria-current');
   }
 }
 
-/** Render the two charts. */
-function renderCharts(state) {
-  const denied = state.receipts.filter((r) => r.outcome === 'Denied');
-  const reasons = byReason(state.receipts).slice(0, 6);
-  const totalDenied = denied.length || 1;
-  barChart($('chart-reasons'), reasons, totalDenied);
-
-  const days = byDay(state.receipts);
-  const totalDays = days.reduce((sum, [, n]) => sum + n, 0) || 1;
-  barChart($('chart-timeline'), days.slice(-8), totalDays);
-}
-
-/** One receipt card. */
-function receiptPill(outcome) {
-  if (outcome === 'Approved') return 'pill approved';
-  if (outcome === 'Failed') return 'pill failed';
-  return 'pill denied';
-}
-
-function renderReceipt(receipt) {
-  const item = el('article', 'decision');
-  const head = el('div', 'decision-head');
-  head.append(el('span', receiptPill(receipt.outcome), receipt.outcome));
-  head.append(el('span', 'decision-id', `№ ${receipt.receipt_id}`));
-  head.append(el('span', 'decision-vendor mono', receipt.vendor));
-  head.append(el('span', 'decision-amount', formatNear(receipt.amount)));
-  item.append(head);
-
-  const meta = el('div', 'decision-meta');
-  meta.append(el('span', null, `nonce ${receipt.nonce}`));
-  if (Number(receipt.request_id) > 0) meta.append(el('span', null, `request #${receipt.request_id}`));
-  meta.append(el('span', null, new Date(timestampSeconds(receipt.created_at) * 1000).toLocaleString()));
-  if (receipt.memo) meta.append(el('span', 'memo', receipt.memo));
-  item.append(meta);
-
-  const body = el('details', 'receipt');
-  const summary = el('summary', null, 'Why this happened');
-  body.append(summary);
-  const receiptBody = el('div', 'receipt-body');
-  if (receipt.reason) {
-    const line = el('div', 'row');
-    line.append(el('span', 'row-label', 'Reason'));
-    line.append(el('span', 'row-value mono', receipt.reason));
-    receiptBody.append(line);
+async function onRoute() {
+  const route = parseRoute();
+  store.set({ view: route.view });
+  showView(route.view === 'receipt' ? 'receipt' : route.view);
+  if (route.view === 'receipt') {
+    await renderReceiptView(store.get(), route.param);
+  } else if (route.view === 'request') {
+    await renderRequestView(store.get(), route.param);
+  } else if (route.view === 'policy') {
+    renderPolicy(store.get());
+  } else if (route.view === 'requests') {
+    renderRequests(store.get());
+  } else if (route.view === 'ledger') {
+    renderLedgerFilters(store.get());
+    renderLedger(store.get());
+  } else if (route.view === 'enable') {
+    renderEnable(store.get());
+  } else if (route.view === 'judge') {
+    renderJudge(store.get());
+  } else if (route.view === 'overview') {
+    renderHero(store.get());
+    renderStats(store.get());
+    renderCharts(store.get());
   }
-  const ruleLine = el('div', 'row');
-  ruleLine.append(el('span', 'row-label', 'Rule'));
-  ruleLine.append(el('span', 'row-value', receipt.rule));
-  receiptBody.append(ruleLine);
-  if (receipt.evidence?.length) {
-    const evidence = el('ul', 'evidence');
-    for (const ev of receipt.evidence) evidence.append(el('li', 'mono', ev));
-    receiptBody.append(evidence);
-  }
-  const spentLine = el('div', 'row');
-  spentLine.append(el('span', 'row-label', 'Spent after'));
-  spentLine.append(el('span', 'row-value', formatNear(receipt.spent_after)));
-  receiptBody.append(spentLine);
-  body.append(receiptBody);
-  item.append(body);
-  return item;
 }
 
-/** Render the feed list. */
-function renderFeed(state, stale = false) {
-  $('feed-count').textContent = `${state.shown.length} of ${state.totalReceipts}${stale ? ' (stale)' : ''}`;
-  const host = $('feed-list');
-  host.replaceChildren();
-  if (state.shown.length === 0) {
-    host.append(el('p', 'empty-state', 'No decisions on chain yet. Enable the agent and try a spend.'));
-    return;
-  }
-  for (const receipt of state.shown) host.append(renderReceipt(receipt));
-}
-
-/** Copy a step command. */
-async function copyCommand(button, cmd) {
+/** Read the chain and paint what came back. */
+async function refresh({ more = false } = {}) {
+  const state = store.get();
+  store.set({ loading: true });
+  $('refresh').disabled = true;
   try {
-    await navigator.clipboard.writeText(cmd);
-    const original = button.textContent;
-    button.textContent = 'Copied';
-    button.setAttribute('aria-live', 'polite');
-    setTimeout(() => {
-      button.textContent = original;
-      button.removeAttribute('aria-live');
-    }, 1400);
-  } catch {
-    button.textContent = 'Not copyable here';
+    const [policy, treasury, killSwitch, ledger, requests] = await Promise.all([
+      getPolicy(state.deployment),
+      getTreasuryBalance(state.deployment),
+      getKillSwitch(state.deployment),
+      getLedger(state.deployment, cache, more ? PAGE_SIZE * 4 : PAGE_SIZE),
+      getRequests(state.deployment),
+    ]);
+    store.set({
+      policy,
+      treasury,
+      killSwitch,
+      ledger,
+      requests,
+      loadedAt: new Date(),
+      loading: false,
+      error: null,
+      stale: false,
+    });
+    $('error-bar').hidden = true;
+  } catch (error) {
+    store.set({
+      loading: false,
+      error: String(error.message ?? error),
+      stale: Boolean(store.get().loadedAt),
+    });
+    $('error-bar').hidden = false;
+    $('error-bar').textContent = store.get().stale
+      ? `Could not refresh: ${error.message ?? error}. Showing the last successful read.`
+      : `Could not read the contract: ${error.message ?? error}`;
+  } finally {
+    $('refresh').disabled = false;
+    $('refresh').textContent = 'Refresh';
+    paint();
   }
 }
 
-/** Render the enable steps with copy buttons. */
-function renderEnable() {
-  const host = $('steps');
+function paint() {
+  const state = store.get();
+  renderHero(state);
+  renderStats(state);
+  renderCharts(state);
+  renderLedgerFilters(state);
+  renderLedger(state);
+  renderPolicy(state);
+  renderRequests(state);
+  renderJudge(state);
+  const stamp = state.loadedAt
+    ? `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.requests.length} requests, ${state.ledger.total} receipts on chain${state.stale ? ' (stale)' : ''}`
+    : 'Reading the chain...';
+  $('loaded').textContent = stamp;
+  if (state.ledger.errors > 0) {
+    $('error-bar').hidden = false;
+    $('error-bar').textContent = `Some chain calls failed (${state.ledger.errors} of ${state.ledger.total}). Showing what could be read, not a complete ledger.`;
+  }
+  $('deployment-label').textContent = state.deployment.contract;
+  $('agent-label').textContent = state.deployment.agent;
+  $('hero-agent').textContent = state.deployment.agent.replace(/\.testnet$/, '');
+  const walletButton = $('wallet-button');
+  if (state.wallet?.accountId) {
+    walletButton.textContent = state.wallet.accountId;
+    walletButton.classList.add('connected');
+  } else {
+    walletButton.textContent = 'Connect wallet';
+    walletButton.classList.remove('connected');
+  }
+}
+
+/**
+ * The wallet, and the writes it signs.
+ *
+ * The console reads on its own. A write goes through the reader's wallet:
+ * the page asks it to sign a function call and sends what comes back to the
+ * public RPC.
+ */
+async function handleWallet() {
+  const signed = signedTransactions();
+  if (signed && signed.length) {
+    try {
+      const result = await sendSigned(signed[0]);
+      store.set({ wallet: { accountId: connectedAccount(), lastTx: result?.transaction?.hash ?? null } });
+      $('error-bar').hidden = true;
+    } catch (error) {
+      $('error-bar').hidden = false;
+      $('error-bar').textContent = `The wallet sent a transaction the chain refused: ${error.message ?? error}`;
+    }
+    // The signed transactions are in the address bar now. Take them out.
+    const clean = new URL(window.location.href);
+    clean.searchParams.delete('signedTransactions');
+    clean.searchParams.delete('allApps');
+    clean.searchParams.delete('wallet');
+    window.history.replaceState({}, '', clean.toString());
+    await refresh();
+    return;
+  }
+
+  const account = connectedAccount();
+  if (!account) {
+    connectWallet();
+    return;
+  }
+  try {
+    const accountState = await readAccountState(account);
+    store.set({ wallet: { accountId: account, publicKey: accountState.publicKey, lastTx: null } });
+  } catch (error) {
+    store.set({ wallet: { accountId: account, publicKey: null, lastTx: null } });
+    $('error-bar').hidden = false;
+    $('error-bar').textContent = `The wallet is connected, but the account could not be read: ${error.message ?? error}`;
+  }
+  paint();
+}
+
+/** Ask the wallet to sign one call on the contract. */
+async function signCall(method, args) {
+  const state = store.get();
+  const wallet = state.wallet;
+  if (!wallet?.accountId) {
+    connectWallet();
+    return;
+  }
+  try {
+    await signAndSend({
+      contract: state.deployment.contract,
+      accountId: wallet.accountId,
+      method,
+      args,
+      publicKey: wallet.publicKey,
+    });
+  } catch (error) {
+    $('error-bar').hidden = false;
+    $('error-bar').textContent = `Could not build the transaction: ${error.message ?? error}`;
+  }
+}
+
+/** The deployment switcher. */
+function renderDeploymentPanel() {
+  const state = store.get();
+  const host = $('deployment-form');
   host.replaceChildren();
-  STEPS.forEach((step, index) => {
-    const li = el('li', 'step');
-    li.append(el('div', 'step-num', String(index + 1)));
-    const body = el('div', 'step-body');
-    body.append(el('h3', 'step-title', step.title));
-    body.append(el('p', null, step.body));
-    const pre = el('pre', 'step-code');
-    pre.textContent = step.cmd;
-    body.append(pre);
-    const button = el('button', 'copy-button', 'Copy command');
-    button.addEventListener('click', () => copyCommand(button, step.cmd));
-    body.append(button);
-    li.append(body);
-    host.append(li);
+  const fields = [
+    ['contract', 'Contract account'],
+    ['agent', 'Agent account'],
+    ['vendor', 'Vendor account'],
+  ];
+  for (const [key, label] of fields) {
+    const wrapper = el('label', 'field');
+    wrapper.append(el('span', 'field-label', label));
+    const input = el('input', 'field-input');
+    input.type = 'text';
+    input.value = state.deployment[key];
+    input.spellcheck = false;
+    input.addEventListener('change', () => {
+      if (!isAccountId(input.value)) {
+        input.setCustomValidity('A NEAR account id has lower case letters, digits and one dot');
+        input.reportValidity();
+        return;
+      }
+      input.setCustomValidity('');
+      const next = { ...state.deployment, [key]: input.value };
+      writeDeployment(next);
+      window.location.reload();
+    });
+    wrapper.append(input);
+    host.append(wrapper);
+  }
+}
+
+/** Wire the buttons. */
+function wire() {
+  $('refresh').addEventListener('click', () => refresh());
+  $('ledger-more').addEventListener('click', () => refresh({ more: true }));
+  $('wallet-button').addEventListener('click', () => handleWallet());
+  $('deployment-toggle').addEventListener('click', () => {
+    const panel = $('deployment-panel');
+    panel.hidden = !panel.hidden;
+    if (!panel.hidden) renderDeploymentPanel();
+  });
+  $('deployment-panel').addEventListener('click', (event) => {
+    if (event.target.id === 'deployment-panel') $('deployment-panel').hidden = true;
+  });
+  window.addEventListener('hashchange', onRoute);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    const state = store.get();
+    if (!state.loadedAt || Date.now() - state.loadedAt.getTime() > 60000) refresh();
   });
 }
 
-/** Render the protocol refusal list. */
-function renderProtocolList() {
-  const host = $('protocol-list');
-  host.replaceChildren();
-  for (const item of PROTOCOL_LIST) {
-    const row = el('div', 'protocol-item');
-    row.append(el('div', 'protocol-intent', item.text));
-    row.append(el('div', 'protocol-error mono', item.error));
-    host.append(row);
-  }
-}
-
-/** Render an error into the feed. */
-function renderError(error) {
-  const host = $('feed-list');
-  host.replaceChildren();
-  const box = el('div', 'error');
-  box.append(el('strong', null, 'Could not read the contract.'));
-  box.append(el('p', null, String(error.message ?? error)));
-  box.append(el('p', 'muted small', `RPC: ${CONFIG.rpc}`));
-  host.append(box);
-}
-
-let timer = null;
-let lastGood = null;
-
-async function refresh() {
-  const button = $('refresh');
-  button.disabled = true;
-  button.textContent = 'Reading...';
-  try {
-    const state = await loadState();
-    renderHero(state);
-    renderStats(state);
-    renderCharts(state);
-    renderFeed(state);
-    lastGood = state;
-    // The request count is next to the receipt count on purpose. A request
-    // that is waiting for its transfer to settle has no receipt yet, so the
-    // two numbers differ for a moment.
-    $('loaded').textContent = `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.totalRequests} requests, ${state.chainReceipts} receipts on chain`;
-    const partial = (state.receiptErrors ?? 0) > 0;
-    $('error-bar').hidden = !partial;
-    $('error-bar').textContent = partial
-      ? `Some chain calls failed (${state.receiptErrors} of ${state.chainReceipts}). Showing what could be read, not a complete ledger. Try Refresh.`
-      : '';
-  } catch (error) {
-    if (lastGood) {
-      // Stale-state path: keep the last good view visible, labelled stale.
-      renderHero(lastGood);
-      renderStats(lastGood);
-      renderCharts(lastGood);
-      renderFeed(lastGood, true);
-      $('loaded').textContent = `Stale, last successful read at ${lastGood.loadedAt.toLocaleTimeString()}`;
-      $('error-bar').hidden = false;
-      $('error-bar').textContent = `Could not refresh: ${String(error.message ?? error)}. Showing last successful read.`;
-    } else {
-      renderError(error);
-      $('error-bar').hidden = false;
-      $('error-bar').textContent = String(error.message ?? error);
-    }
-  } finally {
-    button.disabled = false;
-    button.textContent = 'Refresh';
-    scheduleNext();
-  }
-}
-
-/** Line up the next read of the chain. */
-function scheduleNext() {
-  if (timer) clearTimeout(timer);
-  timer = setTimeout(() => {
-    // A tab nobody is looking at does not need to keep reading the chain.
-    if (document.hidden) {
-      scheduleNext();
-      return;
-    }
-    refresh();
-  }, 60000);
-}
-
-// When the tab comes back, read the chain again if the page has gone stale.
-document.addEventListener('visibilitychange', () => {
-  if (document.hidden) return;
-  if (!lastGood || Date.now() - lastGood.loadedAt.getTime() > 60000) refresh();
-});
-
-$('refresh').addEventListener('click', refresh);
-renderEnable();
 renderProtocolList();
+renderDeploymentPanel();
+renderEnable(store.get());
+wire();
+showView('overview');
+onRoute();
 refresh();
