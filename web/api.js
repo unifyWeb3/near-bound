@@ -1,18 +1,15 @@
 /**
- * Read only access to the Bound contract on NEAR testnet.
+ * Read access to a Bound contract on NEAR testnet.
  *
- * The page never asks for a key and never signs anything. It reads the same
- * public state a judge can read with the NEAR CLI, and it shows the receipt
- * for every decision, including the denials.
+ * The page never asks for a key and never signs anything here. It reads the
+ * same public state a judge can read with the NEAR CLI, and it shows the
+ * receipt for every decision, including the denials.
+ *
+ * Every read takes the deployment it is for, so the console can show any
+ * contract, not only the demo one.
  */
 
-export const CONFIG = {
-  rpc: 'https://test.rpc.fastnear.com',
-  contract: 'bound-testnet-97685.testnet',
-  agent: 'bound-agent.testnet',
-  vendor: 'bound-vendor.testnet',
-  explorer: 'https://testnet.nearblocks.io',
-};
+import { RPC } from './state.js';
 
 /** How long one RPC call may take before it is given up on. */
 const RPC_TIMEOUT_MS = 10000;
@@ -21,7 +18,10 @@ const RPC_TIMEOUT_MS = 10000;
 const RPC_ATTEMPTS = 2;
 
 /** How many receipt reads run at the same time. */
-const READ_BATCH = 5;
+const READ_BATCH = 6;
+
+/** How many receipts one page of the ledger holds. */
+export const PAGE_SIZE = 25;
 
 /**
  * Parse JSON while keeping u128 amounts exact.
@@ -49,7 +49,7 @@ async function rpcCall(body) {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), RPC_TIMEOUT_MS);
     try {
-      const response = await fetch(CONFIG.rpc, {
+      const response = await fetch(RPC, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -83,7 +83,7 @@ export async function viewFunction(contract, method, args = {}) {
       account_id: contract,
       method_name: method,
       args_base64: argsBase64,
-      finality: 'optimistic',
+      finality: 'final',
     },
   };
   const json = await rpcCall(body);
@@ -104,24 +104,123 @@ export async function viewFunction(contract, method, args = {}) {
   return parseBigJson(new TextDecoder().decode(bytes));
 }
 
-/** Read the policy for the demo agent. */
-export function getPolicy() {
-  return viewFunction(CONFIG.contract, 'get_policy', { agent_id: CONFIG.agent });
+/** Read the policy of one agent. */
+export function getPolicy(deployment) {
+  return viewFunction(deployment.contract, 'get_policy', { agent_id: deployment.agent });
 }
 
-/** Read every request id for the demo agent. */
-export function getRequestIds() {
-  return viewFunction(CONFIG.contract, 'get_request_ids', { agent_id: CONFIG.agent });
+/** Read every request id of one agent. */
+export function getRequestIds(deployment) {
+  return viewFunction(deployment.contract, 'get_request_ids', { agent_id: deployment.agent });
 }
 
 /** Read one request. */
-export function getRequest(requestId) {
-  return viewFunction(CONFIG.contract, 'get_request', { request_id: requestId });
+export function getRequest(deployment, requestId) {
+  return viewFunction(deployment.contract, 'get_request', { request_id: requestId });
 }
 
 /** Read one receipt. */
-export function getReceipt(receiptId) {
-  return viewFunction(CONFIG.contract, 'get_receipt', { receipt_id: receiptId });
+export function getReceipt(deployment, receiptId) {
+  return viewFunction(deployment.contract, 'get_receipt', { receipt_id: receiptId });
+}
+
+/** How many receipts the contract holds, for every agent. */
+export function getReceiptCount(deployment) {
+  return viewFunction(deployment.contract, 'get_receipt_count', {});
+}
+
+/** Read the treasury balance. */
+export function getTreasuryBalance(deployment) {
+  return viewFunction(deployment.contract, 'treasury_balance', {});
+}
+
+/** Whether the owner froze every agent. */
+export function getKillSwitch(deployment) {
+  return viewFunction(deployment.contract, 'get_kill_switch', {});
+}
+
+/**
+ * Read a set of receipt ids, a few at a time.
+ *
+ * @param {object} deployment
+ * @param {number[]} ids
+ */
+export async function readReceipts(deployment, ids) {
+  const receipts = [];
+  let errors = 0;
+  for (let start = 0; start < ids.length; start += READ_BATCH) {
+    const batch = ids.slice(start, start + READ_BATCH);
+    const read = await Promise.all(
+      batch.map(async (id) => {
+        try {
+          return await getReceipt(deployment, id);
+        } catch {
+          errors += 1;
+          return null;
+        }
+      }),
+    );
+    for (const receipt of read) if (receipt) receipts.push(receipt);
+  }
+  return { receipts, errors };
+}
+
+/**
+ * The ledger of one agent, newest first.
+ *
+ * The chain counts every receipt the contract holds, for every agent, and it
+ * does not index them by agent. So the ledger is read in pages: the count
+ * comes from one cheap call, and the receipts come from the ids the reader
+ * has not seen yet. The cache in state.js keeps them, so a second visit reads
+ * only what is new.
+ *
+ * @param {object} deployment
+ * @param {object} cache
+ */
+export async function getLedger(deployment, cache) {
+  const total = Number(await getReceiptCount(deployment));
+  const ids = [];
+  for (let id = 0; id < total; id += 1) ids.push(id);
+
+  // The newest decisions are the ones a reader came for, so the ids that are
+  // not read yet are taken from the top. The whole ledger is read, because the
+  // counts on the page have to be the whole ledger's counts. The cache means a
+  // second visit reads only what is new.
+  const missing = cache.missing(ids).sort((a, b) => b - a);
+  const { receipts, errors } = missing.length ? await readReceipts(deployment, missing) : { receipts: [], errors: 0 };
+  for (const receipt of receipts) cache.set(receipt.receipt_id, receipt);
+  cache.save(deployment);
+
+  const all = cache
+    .values()
+    .filter((receipt) => receipt.agent_id === deployment.agent)
+    .sort((a, b) => timestampSeconds(b.created_at) - timestampSeconds(a.created_at));
+
+  return {
+    receipts: all,
+    total,
+    errors,
+    /** Receipts on chain that this agent has not read yet. */
+    unread: cache.missing(ids).length,
+  };
+}
+
+/**
+ * The requests of one agent, newest first.
+ *
+ * @param {object} deployment
+ */
+export async function getRequests(deployment) {
+  const ids = await getRequestIds(deployment);
+  const requests = [];
+  for (const id of ids) {
+    try {
+      requests.push(await getRequest(deployment, id));
+    } catch {
+      // A request that cannot be read is left out rather than shown as broken.
+    }
+  }
+  return requests.sort((a, b) => Number(b.request_id) - Number(a.request_id));
 }
 
 /**
@@ -165,86 +264,6 @@ export function timestampSeconds(value) {
   if (raw > 1000000000000000n) return Number(raw / 1000000000n);
   if (raw > 1000000000000n) return Number(raw / 1000n);
   return Number(raw);
-}
-
-/** Read the treasury balance. */
-export function getTreasuryBalance() {
-  return viewFunction(CONFIG.contract, 'treasury_balance', {});
-}
-
-/** Whether the owner froze every agent. */
-export function getKillSwitch() {
-  return viewFunction(CONFIG.contract, 'get_kill_switch', {});
-}
-
-/**
- * Read every receipt, newest first, for the demo agent.
- *
- * The reads run a few at a time so a page open does not queue one call
- * behind the other. Returns both the receipts that could be read and the
- * number of calls that failed, so the page can say it is showing a partial
- * ledger instead of printing a confident lie when the RPC drops a call.
- */
-export async function getReceipts() {
-  const count = await viewFunction(CONFIG.contract, 'get_receipt_count', {});
-  const total = Number(count);
-  const receipts = [];
-  let errors = 0;
-  const ids = [];
-  for (let id = 0; id < total; id += 1) ids.push(id);
-  for (let start = 0; start < ids.length; start += READ_BATCH) {
-    const batch = ids.slice(start, start + READ_BATCH);
-    const read = await Promise.all(
-      batch.map(async (id) => {
-        try {
-          return await viewFunction(CONFIG.contract, 'get_receipt', { receipt_id: id });
-        } catch {
-          errors += 1;
-          return null;
-        }
-      }),
-    );
-    for (const receipt of read) {
-      if (receipt && receipt.agent_id === CONFIG.agent) receipts.push(receipt);
-    }
-  }
-  return {
-    receipts: receipts.sort(
-      (a, b) => timestampSeconds(b.created_at) - timestampSeconds(a.created_at),
-    ),
-    total,
-    errors,
-  };
-}
-
-/**
- * Load the whole readable state in one pass.
- *
- * The page shows every receipt it read, so the feed count reads "30 of 30" and
- * not "20 of 30". A caller can still ask for fewer.
- *
- * @param {number} [limit] How many of the newest receipts to keep.
- */
-export async function loadState(limit = Infinity) {
-  const [policy, ids, ledger, treasury, killSwitch] = await Promise.all([
-    getPolicy(),
-    getRequestIds(),
-    getReceipts(),
-    getTreasuryBalance(),
-    getKillSwitch(),
-  ]);
-  return {
-    policy,
-    receipts: ledger.receipts,
-    shown: ledger.receipts.slice(0, limit),
-    totalRequests: ids.length,
-    totalReceipts: ledger.receipts.length,
-    chainReceipts: ledger.total,
-    receiptErrors: ledger.errors,
-    treasury,
-    killSwitch,
-    loadedAt: new Date(),
-  };
 }
 
 /**

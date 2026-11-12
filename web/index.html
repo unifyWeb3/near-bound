@@ -16,173 +16,183 @@
     <div id="error-bar" class="error-bar" hidden></div>
 
     <header class="topbar">
-      <a class="brand-mark" href="./"><span class="mark" aria-hidden="true">S</span>SpendGuard</a>
+      <a class="brand-mark" href="#/overview"><span class="mark" aria-hidden="true">S</span>SpendGuard</a>
       <nav class="topnav" aria-label="Sections">
-        <a href="#who">For who</a>
-        <a href="#live">Live</a>
-        <a href="#enable">Enable</a>
-        <a href="#judge">Judge evidence</a>
+        <a href="#/overview" data-route="overview">Overview</a>
+        <a href="#/policy" data-route="policy">Policy</a>
+        <a href="#/requests" data-route="requests">Requests</a>
+        <a href="#/ledger" data-route="ledger">Ledger</a>
+        <a href="#/enable" data-route="enable">Enable it</a>
+        <a href="#/judge" data-route="judge">Judge evidence</a>
       </nav>
-      <span class="network-badge"><span class="dot"></span> testnet</span>
+      <div class="topbar-right">
+        <button id="deployment-toggle" class="ghost-button" type="button" title="Choose the deployment to read">
+          <span class="dot small"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
+        </button>
+        <button id="wallet-button" class="ghost-button" type="button">Connect wallet</button>
+      </div>
     </header>
 
-    <main id="main">
-      <!-- Hero -->
-      <section class="hero">
-        <div class="hero-copy">
-          <p class="kicker">On NEAR testnet, open source, MIT, no backend</p>
-          <h1>The limit behind your agent.</h1>
-          <p class="lead">
-            A coding agent that buys API credits, market data and compute can be talked into
-            paying. SpendGuard puts a real ceiling behind it. The chain enforces the limit,
-            every attempt is a receipt, and one transaction revokes the agent completely.
-          </p>
-          <div class="cta">
-            <a class="button primary" href="#enable">Enable it in 5 minutes</a>
-            <a class="button ghost" href="#live">See it working on testnet</a>
-          </div>
-          <ul class="proof">
-            <li><strong>Real, not a demo.</strong> Every figure on this page is read from the chain.</li>
-            <li><strong>One transaction lockout.</strong> Delete the key and the agent cannot sign a request at all.</li>
-            <li><strong>No backend.</strong> Nothing to trust, nothing to leak, nothing to go down.</li>
-          </ul>
-        </div>
-
-        <aside class="hero-panel" aria-label="Example of a SpendGuard policy">
-          <div class="wallet-card">
-            <div class="wallet-top">
-              <span class="wallet-label">Agent policy</span>
-              <span class="chip green">live on testnet</span>
-            </div>
-            <div class="wallet-name">bound-agent</div>
-            <div class="wallet-amount" id="hero-remaining">...</div>
-            <div class="wallet-budget-note">remaining of <span id="hero-budget">...</span> per hour</div>
-            <div class="budget-bar"><div class="budget-fill" id="hero-fill"></div></div>
-            <div class="wallet-meta">
-              <div><span class="meta-label">Allowed receivers</span><span class="meta-value">1</span></div>
-              <div><span class="meta-label">Max per spend</span><span class="meta-value" id="hero-maxsingle">...</span></div>
-              <div><span class="meta-label">Rate limit</span><span class="meta-value" id="hero-ratelimit">...</span></div>
-            </div>
-            <div class="wallet-footer">
-              <span class="dot small"></span> Receipt id <span id="hero-receiptid">...</span> written on chain
-            </div>
-          </div>
-        </aside>
-      </section>
-
-      <!-- Who this is for -->
-      <section class="section" id="who">
-        <h2 class="section-title">Who this is for</h2>
-        <p class="section-lead">
-          People on low bandwidth plans, low balances and high risk. They authorise a payment
-          once and watch it happen slowly. A runaway agent competes with that.
-          <span class="muted">Names are illustrative.</span>
-        </p>
-        <div class="personas">
-          <article class="persona">
-            <h3>Tunde, freelance developer, Lagos</h3>
-            <p>
-              Sells five to fifteen hours a week, buys API credits for the agent that writes boilerplate.
-              Concern: one stray prompt drains the prepaid balance before he sees the dashboard.
-            </p>
-          </article>
-          <article class="persona">
-            <h3>Amina, small goods trader, Kaduna</h3>
-            <p>
-              Uses a mobile agent to compare weather, market and satellite data for the planting window.
-              Concern: a file the agent reads tells it to upgrade the plan, in a noisy market she cannot watch.
-            </p>
-          </article>
-          <article class="persona">
-            <h3>Chidi, phone repair shop, Aba</h3>
-            <p>
-              Agents quote the cheapest parts by crawler-scanned vendor catalogs.
-              Concern: a poisoned search result asks for a payment to a vendor with no trading history.
-            </p>
-          </article>
-        </div>
-        <p class="persona-footer">
-          In every case the same failure shape: the tool is fine, the instruction is malicious,
-          and the money moves before the owner can react.
-        </p>
-      </section>
-
-      <!-- Live numbers -->
-      <section class="section" id="live">
-        <div class="panel-head">
-          <h2 class="section-title">Live on NEAR testnet</h2>
-          <div class="controls">
-            <span id="loaded" class="muted small"></span>
-            <button id="refresh" type="button">Refresh</button>
-          </div>
-        </div>
-        <div id="stats-grid" class="stats" aria-live="polite"></div>
+    <div id="deployment-panel" class="deployment-panel" hidden>
+      <div class="deployment-inner">
+        <h2 class="section-title">Read any SpendGuard deployment</h2>
         <p class="muted small">
-          Every figure is read from the public testnet RPC at the moment you open this page.
-          No snapshot, no cache, no invented count. Reproduce any of it yourself in the judge section below.
+          The console reads the chain directly, so it can show any contract that follows the same
+          rules. The account it is reading now is the contract
+          <span id="agent-label" class="mono"></span> is registered against.
         </p>
+        <div id="deployment-form" class="deployment-fields"></div>
+        <p class="muted small">
+          The deployment is in the address bar, so a link to one receipt opens the same page
+          everywhere.
+        </p>
+      </div>
+    </div>
+
+    <main id="main">
+      <!-- Overview -->
+      <section class="view" id="view-overview">
+        <section class="hero">
+          <div class="hero-copy">
+            <p class="kicker">On NEAR testnet, open source, MIT, no backend</p>
+            <h1>The limit behind your agent.</h1>
+            <p class="lead">
+              An AI agent that has to pay for API credits or compute can be talked into paying.
+              SpendGuard puts a real ceiling behind it: the chain enforces the limit, every
+              attempt is a receipt, and one transaction revokes the agent completely. The
+              contract moves NEAR to the counterparty account under the policy.
+            </p>
+            <div class="cta">
+              <a class="button primary" href="#/enable">Enable it in 5 minutes</a>
+              <a class="button ghost" href="#/ledger">See it working on testnet</a>
+            </div>
+            <ul class="proof">
+              <li><strong>Real, not a demo.</strong> Every figure on this page is read from the chain.</li>
+              <li><strong>One transaction lockout.</strong> Delete the key and the agent cannot sign a request at all.</li>
+              <li><strong>No backend.</strong> Nothing to trust, nothing to leak, nothing to go down.</li>
+            </ul>
+          </div>
+
+          <aside class="hero-panel" aria-label="The policy of the deployment being read">
+            <div class="wallet-card">
+              <div class="wallet-top">
+                <span class="wallet-label">Agent policy</span>
+                <span class="chip green">live on testnet</span>
+              </div>
+              <div class="wallet-name" id="hero-agent">agent</div>
+              <div class="wallet-amount" id="hero-remaining">...</div>
+              <div class="wallet-budget-note">remaining of <span id="hero-budget">...</span> per hour</div>
+              <div class="budget-bar"><div class="budget-fill" id="hero-fill"></div></div>
+              <div class="wallet-meta">
+                <div><span class="meta-label">Allowed receivers</span><span class="meta-value" id="hero-receivers">...</span></div>
+                <div><span class="meta-label">Max per spend</span><span class="meta-value" id="hero-maxsingle">...</span></div>
+                <div><span class="meta-label">Rate limit</span><span class="meta-value" id="hero-ratelimit">...</span></div>
+              </div>
+              <div class="wallet-footer">
+                <span class="dot small"></span> Receipt id <span id="hero-receiptid">...</span> written on chain
+              </div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="section" id="live">
+          <div class="panel-head">
+            <h2 class="section-title">Live on NEAR testnet</h2>
+            <div class="controls">
+              <span id="loaded" class="muted small"></span>
+              <button id="refresh" type="button">Refresh</button>
+            </div>
+          </div>
+          <div id="stats-grid" class="stats" aria-live="polite"></div>
+          <p class="muted small">
+            Every figure is read from the public testnet RPC at the moment you open this page.
+            Reproduce any of it yourself in the judge evidence below.
+          </p>
+        </section>
+
+        <section class="section split">
+          <div class="panel feed-panel">
+            <h2 class="section-title">The decision feed</h2>
+            <div id="ledger-filters" class="filter-row"></div>
+            <div id="ledger-list" class="feed" aria-live="polite"></div>
+            <p id="ledger-count" class="muted small"></p>
+            <p id="ledger-unread" class="muted small"></p>
+            <button id="ledger-more" class="ghost-button" type="button" hidden></button>
+          </div>
+
+          <div class="side-col">
+            <div class="panel chart-panel">
+              <h3 class="panel-title">Blocked by reason</h3>
+              <div id="chart-reasons" class="bars" data-tone="blocked"></div>
+              <h3 class="panel-title">Decisions by day</h3>
+              <div id="chart-timeline" class="bars"></div>
+            </div>
+            <div class="panel key-panel">
+              <h3 class="panel-title">The agent key cannot do this</h3>
+              <p class="muted small">The four refusals the protocol makes, captured by demo/protocol_arm.sh.</p>
+              <div id="protocol-list"></div>
+            </div>
+          </div>
+        </section>
       </section>
 
-      <!-- Feed and side column -->
-      <section class="section split" id="feed">
-        <div class="panel feed-panel">
-          <h2 class="section-title">The decision feed <span class="count" id="feed-count"></span></h2>
-          <div id="feed-list" class="feed" aria-live="polite"></div>
+      <!-- Policy -->
+      <section class="view" id="view-policy" hidden>
+        <div class="section">
+          <div class="panel-head">
+            <h2 class="section-title">The policy</h2>
+            <span class="muted small">read from the contract, nothing stored here</span>
+          </div>
+          <div id="policy-view" class="panel"></div>
         </div>
+      </section>
 
-        <div class="side-col">
-          <div class="panel chart-panel">
-            <h3 class="panel-title">Blocked by reason</h3>
-            <div id="chart-reasons" class="bars" data-tone="blocked"></div>
-            <h3 class="panel-title">Decisions by day</h3>
-            <div id="chart-timeline" class="bars"></div>
+      <!-- Requests -->
+      <section class="view" id="view-requests" hidden>
+        <div class="section">
+          <div class="panel-head">
+            <h2 class="section-title">Requests waiting for the owner</h2>
+            <span id="requests-count" class="muted small"></span>
           </div>
-          <div class="panel key-panel">
-            <h3 class="panel-title">The agent key cannot do this</h3>
-            <p class="muted small">The four refusals the protocol makes, captured by demo/protocol_arm.sh.</p>
-            <div id="protocol-list"></div>
+          <div id="requests-view" class="feed"></div>
+        </div>
+      </section>
+
+      <!-- One receipt or one request -->
+      <section class="view" id="view-receipt" hidden>
+        <div class="section">
+          <div class="panel-head">
+            <h2 class="section-title">One decision</h2>
+            <a class="muted small" href="#/ledger">back to the ledger</a>
           </div>
+          <div id="receipt-view" class="panel"></div>
         </div>
       </section>
 
       <!-- Enable -->
-      <section class="section" id="enable">
-        <h2 class="section-title">Enable it, three accounts and five commands</h2>
-        <p class="section-lead">
-          You need testnet NEAR, the <code>near</code> CLI and the <code>bound</code> repository.
-          The commands below are exactly what the demo used, with new accounts. Testnet NEAR is free.
-        </p>
-
-        <ol class="steps" id="steps"></ol>
+      <section class="view" id="view-enable" hidden>
+        <div class="section">
+          <h2 class="section-title">Enable it, three accounts and eight steps</h2>
+          <p class="section-lead">
+            You need testnet NEAR, the <code>near</code> CLI and the <code>bound</code> repository.
+            Put your own account names in, and every command below is the command to run.
+            Testnet NEAR is free.
+          </p>
+          <div id="enable-names" class="deployment-fields"></div>
+          <ol class="steps" id="steps"></ol>
+        </div>
       </section>
 
       <!-- Judge evidence -->
-      <section class="section" id="judge">
-        <details class="judge-details">
-          <summary class="judge-toggle">Judge evidence <span class="muted small">reproduce everything with curl</span></summary>
-          <div class="judge-body">
-            <h3 class="panel-title">1. The policy</h3>
-            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"'$(printf '{"agent_id":"bound-agent.testnet"}' | base64 -w0)'","finality":"optimistic"}}'</pre>
-
-            <h3 class="panel-title">2. The denial, with evidence</h3>
-            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"'$(printf '{"receipt_id":10}' | base64 -w0)'","finality":"optimistic"}}'</pre>
-            <p class="muted small">Receipt 10: <code>BudgetExceeded</code> and budget evidence lines.</p>
-
-            <h3 class="panel-title">3. The treasury and the key</h3>
-            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_access_key_list","account_id":"bound-agent.testnet","finality":"optimistic"}}'</pre>
-            <p class="muted small">Shows the one key the agent can use. Scope: one receiver, one method, an allowance.</p>
-
-            <h3 class="panel-title">4. Count the decisions</h3>
-            <pre class="code-block">curl -s -X POST https://test.rpc.fastnear.com -H 'Content-Type: application/json' -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt_count","args_base64":"e30=","finality":"optimistic"}}'</pre>
-
-            <h3 class="panel-title">Why it is like this</h3>
-            <ul class="evidence-notes">
-              <li>No database and no cache; the same numbers this page prints come from these calls.</li>
-              <li>Receipts survive the redeploy on 2026-11-05; storage was untouched.</li>
-              <li>This repository is the evidence. Code is MIT.</li>
-            </ul>
-          </div>
-        </details>
+      <section class="view" id="view-judge" hidden>
+        <div class="section">
+          <h2 class="section-title">Judge evidence</h2>
+          <p class="section-lead">
+            Every figure on this site comes from these calls. They need no key, no account and no
+            explorer, so they run anywhere.
+          </p>
+          <div class="panel judge-body" id="judge-body"></div>
+        </div>
       </section>
     </main>
 

@@ -1243,3 +1243,202 @@ summary:focus-visible {
   left: 12px;
   top: 12px;
 }
+
+/* ---------- The console shell: views, the deployment switcher, the wallet ---------- */
+
+.view[hidden] {
+  display: none;
+}
+
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.ghost-button {
+  font-family: var(--mono);
+  font-size: 11px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.ghost-button:hover {
+  color: var(--ink);
+  border-color: var(--jade);
+}
+
+.deployment-panel {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 19, 16, 0.35);
+  display: grid;
+  place-items: start center;
+  padding-top: 90px;
+  z-index: 50;
+}
+
+.deployment-panel[hidden] {
+  display: none;
+}
+
+.deployment-inner {
+  width: min(680px, calc(100vw - 32px));
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 40px 90px rgba(28, 26, 21, 0.28);
+}
+
+.deployment-fields {
+  display: grid;
+  gap: 12px;
+  margin: 16px 0;
+}
+
+.field {
+  display: grid;
+  gap: 5px;
+}
+
+.field-label {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.field-input,
+.filter-input,
+.share-link {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 9px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--ink);
+  width: 100%;
+}
+
+.filter-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.chip-button {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+
+.chip-button[aria-pressed='true'] {
+  color: var(--jade);
+  border-color: rgba(23, 94, 66, 0.4);
+  background: var(--jade-soft);
+}
+
+.filter-input {
+  max-width: 240px;
+  margin-left: auto;
+}
+
+.policy-table {
+  display: grid;
+  gap: 2px;
+}
+
+.policy-table .row {
+  display: grid;
+  grid-template-columns: 180px 1fr;
+  gap: 12px;
+  padding: 9px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.row-note {
+  grid-column: 2;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: -4px;
+  padding-bottom: 6px;
+}
+
+.policy-kill {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+}
+
+.share-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 18px;
+}
+
+.share-link {
+  flex: 1;
+}
+
+.decision-link {
+  font-family: var(--mono);
+  font-size: 12px;
+  margin-top: 6px;
+  display: inline-block;
+}
+
+.pill.pending {
+  color: var(--ink-2);
+  background: var(--panel-2);
+  border-color: rgba(28, 26, 21, 0.2);
+}
+
+.pill.flagged {
+  color: #8a5a12;
+  background: #fdf3e0;
+  border-color: rgba(138, 90, 18, 0.3);
+}
+
+.pill.settling {
+  color: var(--jade);
+  background: var(--jade-soft);
+  border-color: rgba(23, 94, 66, 0.25);
+}
+
+.decision.single {
+  max-width: 720px;
+}
+
+.decision-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ghost-button.connected {
+  color: var(--jade);
+  border-color: rgba(23, 94, 66, 0.4);
+  background: var(--jade-soft);
+}
