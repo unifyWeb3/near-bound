@@ -236,13 +236,18 @@ Do X, see Y:
 
 ```bash
 git clone https://github.com/unifyWeb3/near-bound.git
-cd near-bound/policy && cargo test
-cd ../contract && cargo test
+cd near-bound
+make test
 ```
+
+`make test` runs both suites: `cd policy && cargo test --locked`, then
+`cd contract && cargo test --locked`. The two crates are deliberately not a cargo
+workspace, because the contract's `Cargo.lock` is what fixes the bytes of the
+wasm on chain.
 
 See 17 policy tests pass, then 13 contract tests pass. The policy suite covers the denial paths: over-budget, unknown vendor, single spend cap, rate limit, revoked agent, replayed nonce, zero amount, and the order of the blocklist check. The contract suite covers who may call what, the kill switch stopping an approval, a transfer that settles, a transfer that fails, an agent that cannot be registered twice, and two approvals that cannot together go over the budget.
 
-4. Run the protocol arm against testnet. It needs an owner account, an agent account holding the scoped key, and the key file.
+4. Run the protocol arm against testnet. It needs an owner account, an agent account holding the scoped key, and the key file. The console's "Enable it" view has this command and the ones below with the account names filled in.
 
 ```bash
 # the scoped key the agent uses
