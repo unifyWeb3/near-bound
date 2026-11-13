@@ -1,15 +1,12 @@
 /**
- * Read access to a Bound contract on NEAR testnet.
+ * The read layer. One function per view method of the contract.
  *
  * The page never asks for a key and never signs anything here. It reads the
- * same public state a judge can read with the NEAR CLI, and it shows the
- * receipt for every decision, including the denials.
- *
- * Every read takes the deployment it is for, so the console can show any
- * contract, not only the demo one.
+ * same public state a judge can read with the NEAR CLI.
  */
 
-import { RPC } from './state.js';
+import { RPC } from './deployment.js';
+import { timestampSeconds } from './format.js';
 
 /** How long one RPC call may take before it is given up on. */
 const RPC_TIMEOUT_MS = 10000;
@@ -19,9 +16,6 @@ const RPC_ATTEMPTS = 2;
 
 /** How many receipt reads run at the same time. */
 const READ_BATCH = 6;
-
-/** How many receipts one page of the ledger holds. */
-export const PAGE_SIZE = 25;
 
 /**
  * Parse JSON while keeping u128 amounts exact.
@@ -38,8 +32,6 @@ export function parseBigJson(text) {
 
 /**
  * Send one JSON-RPC request, with a timeout and one retry.
- *
- * Without the timeout a stalled RPC leaves the page on "Reading..." forever.
  *
  * @param {object} body
  */
@@ -74,7 +66,7 @@ async function rpcCall(body) {
  */
 export async function viewFunction(contract, method, args = {}) {
   const argsBase64 = btoa(JSON.stringify(args));
-  const body = {
+  const json = await rpcCall({
     jsonrpc: '2.0',
     id: 'bound',
     method: 'query',
@@ -85,8 +77,7 @@ export async function viewFunction(contract, method, args = {}) {
       args_base64: argsBase64,
       finality: 'final',
     },
-  };
-  const json = await rpcCall(body);
+  });
   if (json.error) {
     const name = json.error.cause?.name ?? json.error.name ?? 'RPC error';
     const info = json.error.cause?.info ?? json.error.data ?? '';
@@ -104,37 +95,67 @@ export async function viewFunction(contract, method, args = {}) {
   return parseBigJson(new TextDecoder().decode(bytes));
 }
 
-/** Read the policy of one agent. */
+/**
+ * The policy of one agent.
+ *
+ * @param {{contract: string, agent: string}} deployment
+ */
 export function getPolicy(deployment) {
   return viewFunction(deployment.contract, 'get_policy', { agent_id: deployment.agent });
 }
 
-/** Read every request id of one agent. */
+/**
+ * Every request id of one agent.
+ *
+ * @param {{contract: string, agent: string}} deployment
+ */
 export function getRequestIds(deployment) {
   return viewFunction(deployment.contract, 'get_request_ids', { agent_id: deployment.agent });
 }
 
-/** Read one request. */
+/**
+ * One request.
+ *
+ * @param {{contract: string}} deployment
+ * @param {number} requestId
+ */
 export function getRequest(deployment, requestId) {
   return viewFunction(deployment.contract, 'get_request', { request_id: requestId });
 }
 
-/** Read one receipt. */
+/**
+ * One receipt.
+ *
+ * @param {{contract: string}} deployment
+ * @param {number} receiptId
+ */
 export function getReceipt(deployment, receiptId) {
   return viewFunction(deployment.contract, 'get_receipt', { receipt_id: receiptId });
 }
 
-/** How many receipts the contract holds, for every agent. */
+/**
+ * How many receipts the contract holds, for every agent.
+ *
+ * @param {{contract: string}} deployment
+ */
 export function getReceiptCount(deployment) {
   return viewFunction(deployment.contract, 'get_receipt_count', {});
 }
 
-/** Read the treasury balance. */
+/**
+ * The treasury balance.
+ *
+ * @param {{contract: string}} deployment
+ */
 export function getTreasuryBalance(deployment) {
   return viewFunction(deployment.contract, 'treasury_balance', {});
 }
 
-/** Whether the owner froze every agent. */
+/**
+ * Whether the owner froze every agent.
+ *
+ * @param {{contract: string}} deployment
+ */
 export function getKillSwitch(deployment) {
   return viewFunction(deployment.contract, 'get_kill_switch', {});
 }
@@ -142,7 +163,7 @@ export function getKillSwitch(deployment) {
 /**
  * Read a set of receipt ids, a few at a time.
  *
- * @param {object} deployment
+ * @param {{contract: string}} deployment
  * @param {number[]} ids
  */
 export async function readReceipts(deployment, ids) {
@@ -168,13 +189,10 @@ export async function readReceipts(deployment, ids) {
 /**
  * The ledger of one agent, newest first.
  *
- * The chain counts every receipt the contract holds, for every agent, and it
- * does not index them by agent. So the ledger is read in pages: the count
- * comes from one cheap call, and the receipts come from the ids the reader
- * has not seen yet. The cache in state.js keeps them, so a second visit reads
- * only what is new.
+ * The counts on the page have to be the whole ledger's counts, so the whole
+ * ledger is read. The cache means a second visit reads only what is new.
  *
- * @param {object} deployment
+ * @param {{contract: string, agent: string}} deployment
  * @param {object} cache
  */
 export async function getLedger(deployment, cache) {
@@ -182,12 +200,10 @@ export async function getLedger(deployment, cache) {
   const ids = [];
   for (let id = 0; id < total; id += 1) ids.push(id);
 
-  // The newest decisions are the ones a reader came for, so the ids that are
-  // not read yet are taken from the top. The whole ledger is read, because the
-  // counts on the page have to be the whole ledger's counts. The cache means a
-  // second visit reads only what is new.
   const missing = cache.missing(ids).sort((a, b) => b - a);
-  const { receipts, errors } = missing.length ? await readReceipts(deployment, missing) : { receipts: [], errors: 0 };
+  const { receipts, errors } = missing.length
+    ? await readReceipts(deployment, missing)
+    : { receipts: [], errors: 0 };
   for (const receipt of receipts) cache.set(receipt.receipt_id, receipt);
   cache.save(deployment);
 
@@ -196,19 +212,13 @@ export async function getLedger(deployment, cache) {
     .filter((receipt) => receipt.agent_id === deployment.agent)
     .sort((a, b) => timestampSeconds(b.created_at) - timestampSeconds(a.created_at));
 
-  return {
-    receipts: all,
-    total,
-    errors,
-    /** Receipts on chain that this agent has not read yet. */
-    unread: cache.missing(ids).length,
-  };
+  return { receipts: all, total, errors, unread: cache.missing(ids).length };
 }
 
 /**
  * The requests of one agent, newest first.
  *
- * @param {object} deployment
+ * @param {{contract: string, agent: string}} deployment
  */
 export async function getRequests(deployment) {
   const ids = await getRequestIds(deployment);
@@ -224,54 +234,11 @@ export async function getRequests(deployment) {
 }
 
 /**
- * Format yoctoNEAR as NEAR. Keeps small amounts readable.
- *
- * @param {string|number|bigint} yocto
- */
-export function formatNear(yocto) {
-  const value = BigInt(yocto);
-  const unit = 1000000000000000000000000n;
-  const whole = value / unit;
-  const frac = value % unit;
-  if (frac === 0n) return `${whole} NEAR`;
-  const digits = frac.toString().padStart(24, '0').replace(/0+$/, '');
-  // Whole NEAR balances clamp to 6 fraction digits so the figure fits a
-  // small screen; sub-NEAR amounts keep 8, which is all they need.
-  const cap = whole === 0n ? 8 : 6;
-  return `${whole}.${digits.slice(0, cap)} NEAR`;
-}
-
-/**
- * Format yoctoNEAR as an exact integer with separators.
- *
- * @param {string|number|bigint} yocto
- */
-export function formatYocto(yocto) {
-  return `${BigInt(yocto).toLocaleString('en-US')} yocto`;
-}
-
-/**
- * Seconds since the epoch for a timestamp the contract wrote.
- *
- * Receipts written before the block timestamp fix carry nanoseconds. Values
- * above 10^15 are treated as nanoseconds, values above 10^12 as milliseconds,
- * otherwise as seconds.
- *
- * @param {string|number|bigint} value
- */
-export function timestampSeconds(value) {
-  const raw = BigInt(value);
-  if (raw > 1000000000000000n) return Number(raw / 1000000000n);
-  if (raw > 1000000000000n) return Number(raw / 1000n);
-  return Number(raw);
-}
-
-/**
  * The exact strings the protocol returns when the agent key is misused.
  *
  * These are the nearcore messages for the four refusals the protocol makes
- * before the contract is reached. The script demo/protocol_arm.sh runs them
- * and the console shows them as a transcript of that run.
+ * before the contract is reached. The script demo/protocol_arm.sh runs them and
+ * the console shows them as a transcript of that run.
  */
 export const PROTOCOL_CHECKS = [
   {

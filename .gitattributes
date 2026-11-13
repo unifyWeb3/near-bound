@@ -1,0 +1,2 @@
+# Vendored upstream builds are not reformatted or whitespace-checked.
+web/vendor/*.iife.js -whitespace

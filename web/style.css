@@ -1442,3 +1442,306 @@ summary:focus-visible {
   border-color: rgba(23, 94, 66, 0.4);
   background: var(--jade-soft);
 }
+
+/* ---------- The wallet picker and the dialogs ---------- */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 19, 16, 0.45);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 80;
+}
+
+.modal-panel {
+  width: min(720px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  padding: 24px;
+  box-shadow: 0 40px 90px rgba(28, 26, 21, 0.28);
+  display: grid;
+  gap: 14px;
+}
+
+.modal-title {
+  font-size: 20px;
+  margin: 0;
+}
+
+.modal-body {
+  display: grid;
+  gap: 12px;
+}
+
+.modal-status {
+  font-size: 13px;
+  color: var(--muted);
+  margin: 0;
+  min-height: 18px;
+}
+
+.wallet-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.wallet-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  cursor: pointer;
+  color: var(--ink);
+  transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
+}
+
+.wallet-option:hover:not(:disabled) {
+  border-color: var(--jade);
+  background: var(--panel);
+  transform: translateY(-1px);
+}
+
+.wallet-option:disabled {
+  opacity: 0.6;
+  cursor: progress;
+}
+
+.wallet-option.working {
+  border-color: var(--jade);
+}
+
+.wallet-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  flex: none;
+  object-fit: cover;
+  background: var(--panel);
+  border: 1px solid var(--line);
+}
+
+.wallet-text {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wallet-option .wallet-name,
+.wallet-text .wallet-name {
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.wallet-description {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* ---------- Alerts, hints and loading states ---------- */
+
+.alert,
+.error-bar {
+  font-size: 13px;
+}
+
+.alert {
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+
+.alert-error {
+  color: #7a2418;
+  background: var(--denied-soft);
+  border-color: rgba(138, 42, 27, 0.25);
+}
+
+.alert-warning {
+  color: #8a5a12;
+  background: #fdf3e0;
+  border-color: rgba(138, 90, 18, 0.3);
+}
+
+.field-hint {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.skeletons {
+  display: grid;
+  gap: 10px;
+}
+
+.skeleton {
+  height: 72px;
+  border-radius: 12px;
+  background: linear-gradient(90deg, var(--panel-2) 25%, var(--panel) 50%, var(--panel-2) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s ease infinite;
+  border: 1px solid var(--line);
+}
+
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ---------- Layout and organisation ---------- */
+
+.hero {
+  align-items: stretch;
+}
+
+.hero-copy {
+  display: grid;
+  gap: 18px;
+  align-content: start;
+}
+
+.section {
+  display: grid;
+  gap: 16px;
+}
+
+.panel-head {
+  align-items: center;
+}
+
+.stats {
+  gap: 12px;
+}
+
+.stat {
+  min-height: 110px;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.split {
+  align-items: start;
+}
+
+.side-col {
+  display: grid;
+  gap: 16px;
+}
+
+.feed {
+  gap: 10px;
+}
+
+.decision {
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.decision:hover {
+  border-color: rgba(23, 94, 66, 0.25);
+  box-shadow: 0 8px 20px rgba(28, 26, 21, 0.04);
+}
+
+.filter-row {
+  padding: 4px 0;
+}
+
+.topnav a[aria-current="page"] {
+  color: var(--ink);
+  border-bottom: 2px solid var(--jade);
+  padding-bottom: 2px;
+}
+
+.topbar-right {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.deployment-panel {
+  z-index: 70;
+}
+
+@media (max-width: 720px) {
+  .topbar {
+    align-items: flex-start;
+  }
+  .topnav {
+    order: 3;
+    width: 100%;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .hero {
+    padding-top: 28px;
+  }
+  h1 {
+    font-size: 34px;
+  }
+  .modal-backdrop {
+    padding: 12px;
+    align-items: end;
+  }
+  .modal-panel {
+    border-radius: 16px 16px 0 0;
+    max-height: 85vh;
+  }
+  .wallet-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+  .wallet-option,
+  .decision {
+    transition: none;
+  }
+}
+
+.wallet-note {
+  font-size: 10px;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.wallet-subtitle {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.wallet-grid-unavailable .wallet-option {
+  opacity: 0.55;
+}
+
+.wallet-option.unavailable {
+  cursor: not-allowed;
+  filter: grayscale(0.45);
+}
+
+.wallet-option.unavailable:hover {
+  border-color: var(--line);
+  background: var(--panel-2);
+  transform: none;
+}

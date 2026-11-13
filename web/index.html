@@ -29,7 +29,7 @@
         <button id="deployment-toggle" class="ghost-button" type="button" title="Choose the deployment to read">
           <span class="dot small"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
         </button>
-        <button id="wallet-button" class="ghost-button" type="button">Connect wallet</button>
+        <button id="wallet-button" class="ghost-button" type="button" aria-label="Connect a NEAR wallet">Connect wallet</button>
       </div>
     </header>
 
@@ -38,8 +38,8 @@
         <h2 class="section-title">Read any SpendGuard deployment</h2>
         <p class="muted small">
           The console reads the chain directly, so it can show any contract that follows the same
-          rules. The account it is reading now is the contract
-          <span id="agent-label" class="mono"></span> is registered against.
+          rules. The agent it reads for is
+          <span id="agent-label" class="mono"></span>.
         </p>
         <div id="deployment-form" class="deployment-fields"></div>
         <p class="muted small">
@@ -64,7 +64,7 @@
             </p>
             <div class="cta">
               <a class="button primary" href="#/enable">Enable it in 5 minutes</a>
-              <a class="button ghost" href="#/ledger">See it working on testnet</a>
+              <a class="button ghost" id="hero-ledger-link" href="#/ledger">See it working on testnet</a>
             </div>
             <ul class="proof">
               <li><strong>Real, not a demo.</strong> Every figure on this page is read from the chain.</li>
@@ -106,18 +106,17 @@
           <div id="stats-grid" class="stats" aria-live="polite"></div>
           <p class="muted small">
             Every figure is read from the public testnet RPC at the moment you open this page.
-            Reproduce any of it yourself in the judge evidence below.
+            Reproduce any of it yourself in the judge evidence.
           </p>
         </section>
 
         <section class="section split">
           <div class="panel feed-panel">
-            <h2 class="section-title">The decision feed</h2>
-            <div id="ledger-filters" class="filter-row"></div>
-            <div id="ledger-list" class="feed" aria-live="polite"></div>
-            <p id="ledger-count" class="muted small"></p>
-            <p id="ledger-unread" class="muted small"></p>
-            <button id="ledger-more" class="ghost-button" type="button" hidden></button>
+            <h2 class="section-title">The newest decisions</h2>
+            <div id="recent-list" class="feed" aria-live="polite"></div>
+            <p class="muted small">
+              The ledger has every decision of this agent. <a href="#/ledger">Open the ledger</a>.
+            </p>
           </div>
 
           <div class="side-col">
@@ -158,7 +157,7 @@
         </div>
       </section>
 
-      <!-- One receipt or one request -->
+      <!-- One decision -->
       <section class="view" id="view-receipt" hidden>
         <div class="section">
           <div class="panel-head">
@@ -166,6 +165,21 @@
             <a class="muted small" href="#/ledger">back to the ledger</a>
           </div>
           <div id="receipt-view" class="panel"></div>
+        </div>
+      </section>
+
+      <!-- The ledger -->
+      <section class="view" id="view-ledger" hidden>
+        <div class="section">
+          <div class="panel-head">
+            <h2 class="section-title">The ledger</h2>
+            <span class="muted small">every decision of this agent, with the rule that blocked it</span>
+          </div>
+          <div id="ledger-filters" class="filter-row"></div>
+          <div id="ledger-list" class="feed" aria-live="polite"></div>
+          <p id="ledger-count" class="muted small"></p>
+          <p id="ledger-unread" class="muted small"></p>
+          <button id="ledger-more" class="ghost-button" type="button" hidden></button>
         </div>
       </section>
 

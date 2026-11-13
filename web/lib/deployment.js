@@ -1,6 +1,5 @@
 /**
- * Which deployment the console is looking at, and the small client side store
- * the views read from.
+ * Which deployment the console is reading, and the receipts already read.
  *
  * The deployment comes from the URL first, then from the last visit, then from
  * the demo. That is what lets a third party point the console at their own
@@ -17,23 +16,33 @@ export const DEFAULT_DEPLOYMENT = {
   vendor: 'bound-vendor.testnet',
 };
 
-/** Where the last visited deployment is remembered. */
 const STORAGE_KEY = 'spendguard.deployment';
 
 /**
  * A NEAR account id: lower case letters, digits and the separators NEAR allows.
- * The console checks the shape before it spends an RPC call on it.
  */
 const ACCOUNT_RE = /^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$/;
 
+/**
+ * @param {unknown} value
+ */
 export function isAccountId(value) {
   return typeof value === 'string' && value.length >= 2 && value.length <= 64 && ACCOUNT_RE.test(value);
+}
+
+function readStored() {
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
  * The deployment the visitor asked for.
  *
- * @param {string} [search] A query string, without the question mark.
+ * @param {string} [search] A query string without the question mark.
  */
 export function readDeployment(search = window.location.search) {
   const params = new URLSearchParams(search);
@@ -48,20 +57,11 @@ export function readDeployment(search = window.location.search) {
   };
 }
 
-function readStored() {
-  try {
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
 /**
- * Remember a deployment and put it in the URL, so the address bar always
- * says which contract the page is showing.
+ * Remember a deployment and put it in the URL, so the address bar always says
+ * which contract the page is showing.
  *
- * @param {object} deployment
+ * @param {{contract: string, agent: string, vendor: string}} deployment
  */
 export function writeDeployment(deployment) {
   try {
@@ -77,87 +77,64 @@ export function writeDeployment(deployment) {
 }
 
 /**
- * A tiny store. The views subscribe to it, the shell writes to it.
- */
-export function createStore(initial) {
-  let state = initial;
-  const listeners = new Set();
-  return {
-    get() {
-      return state;
-    },
-    set(patch) {
-      state = { ...state, ...patch };
-      for (const listener of listeners) listener(state);
-      return state;
-    },
-    subscribe(listener) {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-  };
-}
-
-/**
- * The receipts already read, kept so a returning reader does not read the
- * whole ledger again.
+ * The receipts already read, so a returning reader does not read the whole
+ * ledger again.
  *
- * The chain has no index of one agent's receipts, so the only way to know them
- * all is to read them once. This keeps them, keyed by the deployment, and
- * reads only what is new on the next visit.
+ * The chain counts every receipt the contract holds, for every agent, and it
+ * does not index them by agent. So the ledger is read once, and after that only
+ * the receipts that are new.
  */
 export function createReceiptCache() {
   const key = 'spendguard.receipts';
   let memory = new Map();
 
-  const load = (deployment) => {
-    try {
-      const raw = window.localStorage.getItem(key);
-      const parsed = raw ? JSON.parse(raw) : null;
-      const store = parsed && parsed.deployment === cacheKey(deployment) ? parsed.receipts : {};
-      memory = new Map(Object.entries(store).map(([id, receipt]) => [Number(id), receipt]));
-    } catch {
-      memory = new Map();
-    }
-  };
-
-  const save = (deployment) => {
-    try {
-      const receipts = Object.fromEntries(memory);
-      window.localStorage.setItem(
-        key,
-        JSON.stringify({ deployment: cacheKey(deployment), receipts }),
-      );
-    } catch {
-      // Storage is full or refused. The page still works, it just reads again.
-    }
-  };
+  const cacheKey = (deployment) => `${deployment.contract}/${deployment.agent}`;
 
   return {
-    load,
-    save,
-    get size() {
-      return memory.size;
+    /**
+     * @param {{contract: string, agent: string}} deployment
+     */
+    load(deployment) {
+      try {
+        const raw = window.localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : null;
+        const store = parsed && parsed.deployment === cacheKey(deployment) ? parsed.receipts : {};
+        memory = new Map(Object.entries(store).map(([id, receipt]) => [Number(id), receipt]));
+      } catch {
+        memory = new Map();
+      }
     },
+    /**
+     * @param {{contract: string, agent: string}} deployment
+     */
+    save(deployment) {
+      try {
+        window.localStorage.setItem(
+          key,
+          JSON.stringify({ deployment: cacheKey(deployment), receipts: Object.fromEntries(memory) }),
+        );
+      } catch {
+        // Storage is full or refused. The page still works, it just reads again.
+      }
+    },
+    /** @param {number} id */
     has(id) {
       return memory.has(Number(id));
     },
+    /** @param {number} id */
     get(id) {
       return memory.get(Number(id));
     },
+    /** @param {number} id @param {object} receipt */
     set(id, receipt) {
       memory.set(Number(id), receipt);
     },
     values() {
       return [...memory.values()];
     },
-    /** The ids that are not in the cache yet. */
+    /** @param {number[]} ids */
     missing(ids) {
       return ids.filter((id) => !memory.has(Number(id)));
     },
   };
-}
-
-function cacheKey(deployment) {
-  return `${deployment.contract}/${deployment.agent}`;
 }
