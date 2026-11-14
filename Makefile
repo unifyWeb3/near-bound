@@ -9,11 +9,11 @@ CARGO ?= cargo
 CARGO_HOME ?= $(HOME)/.audit-cargo
 export CARGO_HOME
 
-.PHONY: test test-rust test-shell test-deps test-web verify verify-local fmt clippy wasm clean shellcheck deps-check
+.PHONY: test test-rust test-shell test-deps test-web test-submission verify verify-local fmt clippy wasm clean shellcheck deps-check
 
 # The local unit-test path. Cargo may fetch locked crates when its cache is
 # empty. The tests need no keys and spend nothing.
-test: test-rust test-shell test-deps test-web
+test: test-rust test-shell test-deps test-web test-submission
 
 test-rust:
 	cd policy && $(CARGO) test --locked
@@ -32,6 +32,12 @@ test-deps:
 # installation.
 test-web:
 	cd web && node --test test/*.test.js
+
+# The submission payload failure paths. The script builds the payload for the
+# builder and never sends it, so the tests prove it never guesses a value and
+# never reaches the network.
+test-submission:
+	bash tests/submission/run.sh
 
 # Deterministic Wasm verification: builds twice, compares SHA-256 bytes, and
 # writes a machine-readable local artifact manifest. Not compared to the
@@ -56,7 +62,7 @@ verify:
 	python3 scripts/claims.py --check
 
 shellcheck:
-	shellcheck demo/agent.sh demo/nonce.sh demo/protocol_arm.sh scripts/build-wasm.sh scripts/dependency-check.sh tests/fake-near/run.sh tests/dependency-check/run.sh
+	shellcheck demo/agent.sh demo/nonce.sh demo/protocol_arm.sh scripts/build-wasm.sh scripts/dependency-check.sh tests/fake-near/run.sh tests/dependency-check/run.sh tests/submission/run.sh
 
 # The dependency check installs a pinned cargo-audit when needed and fetches
 # the public RustSec advisory database. It fails closed on either failure.

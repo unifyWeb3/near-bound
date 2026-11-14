@@ -48,8 +48,8 @@ the product and how NEAR fits in.
 > that cannot change the rules cannot get around them. The contract, the
 > console and the audit that closed the findings are open on testnet.
 
-Counted: 985 characters, inside the twenty to two thousand the field
-takes.
+Counted: 987 characters, inside the twenty to two thousand the field
+takes. The payload script checks the count of the text it sends.
 
 ## The demo post
 
@@ -106,6 +106,24 @@ now, or a new recording is made against the live console and the post
 carries it. The earlier video, <https://youtu.be/E9JbF9TlKs4>, is titled
 for the old name and is not used.
 
+A recording of the console as it is now has been made, so the builder does
+not have to make one by hand. It is 26 seconds of the live console at
+1440 by 900, walking the six routes with a slow drift down each one, and
+it was checked frame by frame: the sentence case labels, the state colour
+on the margin rule, the phase rail and the corrected Evidence view are all
+in it. The file is not in the repository, because the repository ignores
+the video directory, and nothing was uploaded anywhere. The builder
+attaches it to the post themselves.
+
+To record it again, against a console that has changed since:
+
+```bash
+cd /path/to/near-bound
+NODE_PATH=/tmp/certalyn-browser/node_modules node tests/browser/record.js
+```
+
+It writes `video/certalyn-console-demo.mp4` and publishes nothing.
+
 ## The payload
 
 The rules say to send exactly these fields and nothing else, and never to
@@ -123,11 +141,24 @@ one line that has to be agreed.
   "tracks": ["security", "agents"],
   "nearAddress": "the builder's mainnet account, 2 to 64 characters, lowercase",
   "projectUrl": "https://github.com/unifyWeb3/near-bound",
-  "demoUrl": "the link to the post the builder publishes",
+  "demoUrl": "https://x.com/oxunify/status/2120085871852478803",
   "idea": "the copy above",
   "consent": "true, after the builder agrees to the notice below"
 }
 ```
+
+The payload is built and checked by a script, which never sends anything and
+never guesses a value:
+
+```bash
+python3 scripts/submission-payload.py --check
+python3 scripts/submission-payload.py --lead-name "..." --email "..." \
+  --near-address "..." --consent
+```
+
+The check mode reads the fields that need no human and is part of CI. The
+full mode prints the payload and the command, for the builder to read before
+they send it.
 
 Every field is checked against the rules in the official file:
 
@@ -142,7 +173,7 @@ Every field is checked against the rules in the official file:
 | nearAddress | open | a mainnet account, 2 to 64 characters, lowercase | The builder's. Never create one for them |
 | projectUrl | https://github.com/unifyWeb3/near-bound | an http(s) URL, at most 300 characters | Ready, the repository is public |
 | demoUrl | the post the builder publishes | an http(s) URL, at most 300 characters | Ready once the post is up |
-| idea | the copy above | 20 to 2000 characters | Ready, 985 characters |
+| idea | the copy above | 20 to 2000 characters | Ready, 987 characters |
 | consent | true | only after the builder agrees to the notice | The builder's |
 
 The consent notice, to be read to the builder word for word:

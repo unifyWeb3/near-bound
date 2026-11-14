@@ -159,6 +159,15 @@ curl for every figure is in the console's **Evidence** view, and the
 transactions behind the recorded run are in the evidence table of this
 repository.
 
+The hackathon entry has its own checks. The payload script builds the
+submission for the builder and never sends it, and the failure-path tests
+prove it never guesses a personal value and never reaches the network:
+
+```bash
+python3 scripts/submission-payload.py --check
+bash tests/submission/run.sh
+```
+
 <!-- evidence:start -->
 | What | Transaction | Result | Branch |
 | --- | --- | --- | --- |

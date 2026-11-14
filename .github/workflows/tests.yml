@@ -84,7 +84,8 @@ jobs:
             scripts/build-wasm.sh \
             scripts/dependency-check.sh \
             tests/fake-near/run.sh \
-            tests/dependency-check/run.sh
+            tests/dependency-check/run.sh \
+            tests/submission/run.sh
       - name: dependency vulnerability check
         run: bash scripts/dependency-check.sh
       - name: dependency-check failure-path tests
@@ -93,6 +94,10 @@ jobs:
         run: bash tests/fake-near/run.sh
       - name: claims consistency check
         run: python3 scripts/claims.py --check
+      - name: the submission payload holds its static fields
+        run: python3 scripts/submission-payload.py --check
+      - name: submission payload failure-path tests
+        run: bash tests/submission/run.sh
 
   web:
     name: web tests
@@ -112,6 +117,6 @@ jobs:
         run: npm test
       - name: every module parses
         run: |
-          for file in web/*.js web/lib/*.js web/views/*.js web/components/*.js; do
+          for file in web/*.js web/lib/*.js web/views/*.js web/components/*.js tests/browser/*.js; do
             node --check "$file"
           done
