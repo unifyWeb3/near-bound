@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate docs/CLAIMS.md and check the historical deployment against it.
+"""Generate docs/CLAIMS.md and check the deployment against it.
 
 Every chain-derived figure in the README comes from this script. Source
 constants and test counts are labelled separately. Run it after the last
@@ -36,7 +36,7 @@ ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 
 # The commit whose CI artifact is the wasm on chain. The artifact for this
 # commit has the sha256 of the deployed code, which is in the claims below.
-WASM_COMMIT = "187fd92843d3a73702e19e95d13a06c36661c8a2"
+WASM_COMMIT = "912b3da191ed44c3701c252eb870be0543622901"
 
 
 def b58decode(text):
@@ -173,6 +173,8 @@ def check_curl(check):
         return call_curl("get_policy", {"agent_id": AGENT})
     if kind == "kill_switch":
         return call_curl("get_kill_switch", {})
+    if kind == "migration":
+        return call_curl("get_migration_status", {})
     if kind == "account":
         return account_curl(AGENT if check.get("account") == "agent" else CONTRACT)
     return None
@@ -254,7 +256,7 @@ CLAIM_ROWS = [
     ("agent key allowance", "agent_key_allowance_yocto", "the chain", "near contract view-access-key-list"),
     ("agent key methods", "agent_key_methods", "the chain", "near contract view-access-key-list"),
     ("agent key receiver", "agent_key_receiver", "the chain", "near contract view-access-key-list"),
-    ("receipts on the historical deployment", "historical_receipt_count", "the chain", "near contract call-function get_receipt_count"),
+    ("receipts on the deployment", "historical_receipt_count", "the chain", "near contract call-function get_receipt_count"),
     ("approved receipts", "receipt_outcomes.Approved", "the chain", "near contract call-function get_receipt"),
     ("denied receipts", "receipt_outcomes.Denied", "the chain", "near contract call-function get_receipt"),
     ("failed receipts", "receipt_outcomes.Failed", "the chain", "near contract call-function get_receipt"),
@@ -336,10 +338,10 @@ def render(data):
     lines.append("")
     lines.append("## The first twelve receipts")
     lines.append("")
-    lines.append("These are the first twelve receipts retained by the historical deployment.")
+    lines.append("These are the first twelve receipts retained by the deployment.")
     lines.append("Their sha256 values are recomputed from that chain, and")
     lines.append("`python3 scripts/claims.py --check` fails if one of them changed.")
-    lines.append("The remediated source is undeployed and retains at most 10,000 receipts.")
+    lines.append("The contract retains at most 10,000 receipts.")
     lines.append("")
     lines.append("| Receipt | sha256 |")
     lines.append("| --- | --- |")
@@ -351,14 +353,16 @@ def render(data):
     lines.append("| What | Transaction | Result |")
     lines.append("| --- | --- | --- |")
     for item in data["transactions"]:
-        lines.append(f"| {item['what']} | `{item['hash']}` | {item['result']} |")
+        tx_hash = item.get("hash")
+        shown = f"`{tx_hash}`" if tx_hash else "no transaction, the state is the evidence"
+        lines.append(f"| {item['what']} | {shown} | {item['result']} |")
     lines.append("")
     lines.append("Each of these has a curl in the evidence table of the README, one read")
     lines.append("of the public testnet RPC that shows what the transaction left behind.")
     lines.append("")
     lines.append("## Where the numbers come from")
     lines.append("")
-    lines.append("The historical chain is the source of truth for chain-derived figures. The test")
+    lines.append("The chain is the source of truth for chain-derived figures. The test")
     lines.append("counts come from the source, and `cargo test` says whether they pass. The")
     lines.append("transactions come from the demo runs recorded in `demo/transactions.json`.")
     lines.append("")
@@ -390,7 +394,6 @@ def evidence_section(data):
     lines.append("| What | Transaction | Result | Branch |")
     lines.append("| --- | --- | --- | --- |")
     for item in data["transactions"]:
-        link = f"[{item['hash'][:12]}](https://explorer.testnet.near.org/transactions/{item['hash']})"
         result = item["result"]
         check = item.get("check") or {}
         if check.get("code_hash"):
@@ -398,6 +401,12 @@ def evidence_section(data):
                 f"deployed, code hash {data['code_hash']}, "
                 f"sha256 {data['code_sha256']}"
             )
+        tx_hash = item.get("hash")
+        if tx_hash:
+            link = f"[{tx_hash[:12]}](https://explorer.testnet.near.org/transactions/{tx_hash})"
+        else:
+            # A row without a transaction is a state check, not a link.
+            link = "no transaction, the state is the evidence"
         lines.append(f"| {item['what']} | {link} | {result} | {BRANCHES.get(item['what'], 'testnet only')} |")
     lines.append("")
     lines.append("Every row can be checked with the public testnet RPC, with no key and no")

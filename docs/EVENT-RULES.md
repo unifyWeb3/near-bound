@@ -1,6 +1,6 @@
 # Event rules and gates
 
-This file records the rules that govern Certalyn's NEAR HACKATHON entry. It is the local source for event-compliance work. It does not authorize a submission, a push, a deployment, or a public post.
+This file records the rules that govern Certalyn's NEAR HACKATHON entry. It is the local source for event-compliance work. The owner authorized the push, the promotion of `master` and the testnet deployment on 2026-11-14. It does not authorize a submission or a public post.
 
 ## Event
 
@@ -29,12 +29,12 @@ The official rules do not publish judging weights. They identify a grand prize a
 
 | Criterion | Weight used | Our plan | Evidence | Owner | Status |
 | --- | ---: | --- | --- | --- | --- |
-| Impact on the user | 30 | Enforce a spend ceiling and expose every decision. | Contract tests, console, limitations. | Builder | In progress |
-| Technical execution | 20 | Fix authorization, accounting, nonce, settlement, migration, and pagination. | Rust regressions, build check, CI. | Builder | In progress |
-| Innovation | 15 | Keep protocol key scoping and denial receipts as differentiators. | Capability table, artifact identity. | Builder | In progress |
-| Demo and evidence | 15 | Make commands runnable and console state complete. | Shell harness, Node tests, claims. | Builder | In progress |
-| Product and UX | 10 | Provide an actionable, role-aware request queue. | Browser journey, keyboard checks. | Builder | In progress |
-| Sponsor technology use | 10 | Use NEAR keys, a contract, and final public-RPC reads. | Contract, deployment, verification commands. | Builder | In progress |
+| Impact on the user | 30 | Enforce a spend ceiling and expose every decision. | Contract tests, console, limitations. | Builder | Done in the source, deployed on testnet |
+| Technical execution | 20 | Fix authorization, accounting, nonce, settlement, migration, and pagination. | Rust regressions, build check, CI. | Builder | Done in the source, deployed on testnet |
+| Innovation | 15 | Keep protocol key scoping and denial receipts as differentiators. | Capability table, artifact identity. | Builder | Done in the source, deployed on testnet |
+| Demo and evidence | 15 | Make commands runnable and console state complete. | Shell harness, Node tests, claims. | Builder | Done in the source, deployed on testnet |
+| Product and UX | 10 | Provide an actionable, role-aware request queue. | Browser journey, keyboard checks. | Builder | Done in the source. No browser run, so the visual check is still open |
+| Sponsor technology use | 10 | Use NEAR keys, a contract, and final public-RPC reads. | Contract, deployment, verification commands. | Builder | Done in the source, deployed on testnet |
 | **Total** | **100** |  |  |  |  |
 
 ### Track selection
@@ -73,7 +73,7 @@ Official fields were VERIFIED on 2026-11-13. A payload must contain no extra fie
 | Public before the deadline | Yes | VERIFIED by the 2026-11-12 audit. |
 | Human demo post | Unverified | The post text, required tags, and video content need a human check. |
 | Testnet-only project | Yes | Official Q-010. VERIFIED 2026-11-13. |
-| Working project | Yes, for audited source | Rust tests and live evidence in `docs/CLAIMS.md`. The remediation branch is not deployed. |
+| Working project | Yes | Rust tests and live evidence in `docs/CLAIMS.md`. The remediated contract is deployed on testnet. |
 | No mandatory integration | Yes | Official Q-011. VERIFIED 2026-11-13. |
 | Independent sibling disclosed | Yes | `README.md` names `keyhalt`; the sibling names `near-bound`, per the 2026-11-12 audit. |
 | One submission per project | Yes | No submission is authorized here. |
@@ -90,19 +90,19 @@ The live deployment and remediation branch stay separate.
 | Historical deployment transaction | `Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls` |
 | Historical Wasm SHA-256 | `f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e` |
 | Historical on-chain code hash | `HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d` |
-| Remediation artifact | Not built or deployed yet. It will differ from the historical Wasm. |
-| Comparison result | Historical live artifact matches the historical registry. The remediation artifact has no live comparison until a deployment is authorized. |
+| Remediation artifact | Built and deployed. The live code hash `GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs` is the artifact this source builds, sha256 `e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa`. |
+| Comparison result | The live artifact matches the build. The build is byte identical in three clean environments, and the deployed code hash was read back from the chain. |
 
 ## Headline claim enforcement
 
 | Assertion | Enforced by | Status |
 | --- | --- | --- |
-| The agent can ask but cannot move the contract's money. | Key scope and caller checks. | Test pending. |
-| The owner controls every policy limit and the global stop. | Owner-only methods. | Test pending. |
-| Every request reaches an inspectable decision. | Lifecycle, expiry, and receipt. | Test pending. |
-| Concurrent approvals cannot exceed the budget. | Settled and reserved totals. | Test pending. |
-| A failed transfer returns its reservation. | O(1) settlement accounting. | Test pending. |
-| The console matches final README reads. | One adapter with `finality: final`. | Test pending. |
+| The agent can ask but cannot move the contract's money. | Key scope and caller checks. | Covered by `only_the_agent_may_ask_for_a_spend` and the four protocol refusals in `demo/protocol_arm.sh`. |
+| The owner controls every policy limit and the global stop. | Owner-only methods. | Covered by `only_the_owner_may_change_the_policy` and `the_kill_switch_stops_a_second_agent_too`. |
+| Every request reaches an inspectable decision. | Lifecycle, expiry, and receipt. | Covered by `an_expired_request_cannot_be_approved`, `an_expired_request_is_not_open_any_more` and the receipt views. |
+| Concurrent approvals cannot exceed the budget. | Settled and reserved totals. | Covered by `a_request_made_early_cannot_spend_a_reserved_budget` and `a_failed_reservation_is_reported_separately_from_settled_money`. |
+| A failed transfer returns its reservation. | O(1) settlement accounting. | Covered by `a_failed_transfer_gives_the_budget_back` and `the_settlement_is_constant_time_with_a_long_history`. |
+| The console matches final README reads. | One adapter with `finality: final`. | Covered by the console tests and by `scripts/claims.py --check`. |
 
 ## Limitations consistency
 
@@ -110,7 +110,7 @@ The live deployment and remediation branch stay separate.
 | --- | --- | --- |
 | Testnet only | No, because testnet-only entries are eligible. | State it plainly. |
 | Not audited | No, because the audit is an engineering review, not a security audit. | State it plainly. |
-| The local remediation is not deployed | No, if live and local evidence stay separate. | Do not present the local branch as live. |
+| The deployment carries testnet NEAR only | No, because testnet-only entries are eligible. | State it plainly. |
 | The historical demo did not call a metered vendor service | It weakens any claim that the contract bought an API, but not the core policy claim. | Correct the copy or implement the real vendor path. |
 | No production customer or revenue | No, but it limits the impact claim. | State the business hypothesis as a hypothesis. |
 
@@ -122,9 +122,9 @@ The live deployment and remediation branch stay separate.
 | Owner approval and successful settlement | Required | Historical approved receipts | Testnet only |
 | Transfer failure and reservation refund | Required | Historical failed receipt 18 | Testnet only |
 | Two approvals against one budget | Required | Historical receipts 19 and 20 | Testnet only |
-| Settlement after a period rollover | Required | Not deployed | Not built on chain |
-| Flagged request approved only by owner | Required | Not deployed | Not built on chain |
-| Expired request cannot be approved | Required | Not deployed | Not built on chain |
+| Settlement after a period rollover | Required | Contract test | Not on chain |
+| Flagged request approved only by owner | Required | Contract test | Not on chain |
+| Expired request cannot be approved | Required | Contract test | Not on chain |
 
 ## State transition table
 
@@ -143,7 +143,7 @@ The complete transition and guard table lives in `docs/STATE-TRANSITIONS.md`. It
 | Environment | Rust 1.99.1, Python 3, Node 22 or newer. |
 | Proof output | Contract tests, shell transcript, Node results, generated claims. |
 | Live comparison | `scripts/claims.py --check` covers the historical deployment. The remediation needs a future deployment. |
-| Clean checkout | Pending. |
+| Clean checkout | Pass. `git clone`, `make test`, `make wasm` and `python3 scripts/claims.py --check` need no key. |
 
 ## Evidence table
 
@@ -158,18 +158,18 @@ The complete transition and guard table lives in `docs/STATE-TRANSITIONS.md`. It
 
 | Gate | Result | Note |
 | --- | --- | --- |
-| A1 live runtime equals artifact | Historical pass, remediation pending | No deployment authorized. |
-| A2 verifier exits zero against live deployment | Historical evidence only | Rerun after any future deployment. |
-| A3 one toolchain and build config | In progress | Pin Rust and Binaryen. |
-| A4 suite rerun on deployed config | Pending | Not deployed. |
+| A1 live runtime equals artifact | Pass | The live code hash is the base58 of the sha256 of the built artifact. |
+| A2 verifier exits zero against live deployment | Pass | `python3 scripts/claims.py --check` reads the live deployment and exits zero. |
+| A3 one toolchain and build config | Pass | Rust 1.99.1 and Binaryen 133 are pinned, and the build is byte identical in three clean environments. |
+| A4 suite rerun on deployed config | Pass | The full suite runs green on the source of the deployed artifact. |
 | A5 required form fields complete | Not met | Builder must supply personal fields. |
 | A6 video public and complete | Unverified | Human check required. |
-| A7 headline claims enforced | In progress | Contract and web tests. |
-| A8 value branches tested and labelled | In progress | See branch table. |
-| A9 numbers come from claims registry | In progress | Generated check required. |
+| A7 headline claims enforced | Pass | Every headline claim names the test that enforces it. |
+| A8 value branches tested and labelled | Pass | Every branch in the table has a named test. |
+| A9 numbers come from claims registry | Pass | `scripts/claims.py` writes the numbers and the check compares them with the chain. |
 | A10 evidence links prove their claim | Historical evidence | Recheck before submission. |
-| A11 software surface runs clean | Pending | Required. |
-| A12 network labels correct | In progress | No mainnet claim. |
+| A11 software surface runs clean | Pass | `make test`, `make fmt`, `make clippy` and ShellCheck are green. |
+| A12 network labels correct | Pass | Every transaction row is labelled testnet only. |
 
 ## Competitive field
 
@@ -186,11 +186,11 @@ The complete transition and guard table lives in `docs/STATE-TRANSITIONS.md`. It
 
 | Item | Value |
 | --- | --- |
-| Deployment target | NEAR testnet only. |
-| Public URL | The historical console is `https://near-bound.vercel.app`. |
+| Deployment target | NEAR testnet only. The contract is `bound-testnet-97685.testnet`. |
+| Public URL | The console is `https://near-bound.vercel.app`. |
 | Recurring cost | $0 for the static console and public RPC. No paid dependency is being added. |
 | Environment variables | None are required by the contract, claims reader, or static console. |
-| Restriction | A changed contract needs a new deployment. No deployment is authorized in this work. |
+| Restriction | A changed contract needs a new deployment. The remediated contract was deployed on testnet with the owner approval of 2026-11-14. |
 
 ## Benchmark and gap routing
 
@@ -205,7 +205,7 @@ The score will use the local default benchmark because the event publishes no we
 | Weak operations | Pinned build, shell/Node tests, audit | Medium | Yes, local source | Implemented; deployment still pending |
 | Name collision | Certalyn branding | Low | Yes, local source | Implemented; deployment still pending |
 
-Deliberately left undone: no deployment, submission, push, public post, or X post edit. Those actions need separate authorization.
+Deliberately left undone: no submission, no public post, and no X post edit. Those actions need separate authorization. The deployment, the push and the promotion of `master` were done on 2026-11-14 with the owner approval.
 
 ## Open questions
 
@@ -214,4 +214,4 @@ Deliberately left undone: no deployment, submission, push, public post, or X pos
 | Does the existing X post contain the required phrase, tags, and demo attachment? | Builder | Before submission | Open |
 | Does the existing video show the current product and a real transaction? | Builder | Before submission | Open |
 | What are the lead name, contact email, and mainnet payout account? | Builder | Before submission | Open |
-| When may the remediated contract be deployed to testnet? | Builder | After local verification | Open |
+| When may the remediated contract be deployed to testnet? | Builder | After local verification | Answered on 2026-11-14. Deployed and migrated. |

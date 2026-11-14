@@ -1,31 +1,31 @@
 {
-  "agent_balance_yocto": "396255931264804100000000",
+  "agent_balance_yocto": "395941786979624200000000",
   "agent_key": "ed25519:2TfeadSSpJfpxTPj9ra5q1SGQGEzG3a4YnGGdsoyQoRY",
-  "agent_key_allowance_yocto": "193971758244228700000000",
+  "agent_key_allowance_yocto": "193657613959048800000000",
   "agent_key_methods": [
     "request_spend"
   ],
   "agent_key_receiver": "bound-testnet-97685.testnet",
-  "code_hash": "HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d",
-  "code_sha256": "f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e",
-  "contract_balance_yocto": "17076158420442356500000000",
+  "code_hash": "GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs",
+  "code_sha256": "e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa",
+  "contract_balance_yocto": "16969918297025314800000000",
   "contract_key": "ed25519:ERnZ8BLvFusfCPReopLBX3fcakY9DPCauYcW3pfskV2j",
-  "contract_storage_bytes": 193927,
-  "generated_at": "2026-11-15 01:41 UTC",
-  "historical_receipt_count": 30,
+  "contract_storage_bytes": 250984,
+  "generated_at": "2026-11-15 03:02 UTC",
+  "historical_receipt_count": 31,
   "policy": {
     "agent_id": "bound-agent.testnet",
     "budget": 5000000000000000000000000,
-    "last_nonce": 15,
+    "last_nonce": 1794708845,
     "max_single_spend": 1000000000000000000000000,
     "period_seconds": 3600,
-    "period_start": 1794706858,
-    "rate_count": 1,
+    "period_start": 1794708849,
+    "rate_count": 0,
     "rate_limit": 5,
-    "remaining": 5000000000000000000000000,
-    "request_count": 14,
+    "remaining": 4900000000000000000000000,
+    "request_count": 15,
     "revoked": false,
-    "spent": 0,
+    "spent": 100000000000000000000000,
     "vendors": [
       "bound-vendor.testnet"
     ]
@@ -34,13 +34,13 @@
   "policy_max_single_yocto": 1000000000000000000000000,
   "policy_period_seconds": 3600,
   "policy_rate_limit": 5,
-  "policy_remaining_yocto": 5000000000000000000000000,
-  "policy_spent_yocto": 0,
+  "policy_remaining_yocto": 4900000000000000000000000,
+  "policy_spent_yocto": 100000000000000000000000,
   "policy_vendors": [
     "bound-vendor.testnet"
   ],
   "receipt_outcomes": {
-    "Approved": 8,
+    "Approved": 9,
     "Denied": 21,
     "Failed": 1
   },
@@ -194,7 +194,43 @@
       "hash": "3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S",
       "result": "the allowlist is back to one vendor",
       "what": "the owner removes the vendor that does not exist"
+    },
+    {
+      "check": {
+        "account": "contract",
+        "code_hash": true,
+        "kind": "account"
+      },
+      "hash": "74PGYcLQ3drCFUzFAju48nfECM7CddWpRVTiX7Xrikfs",
+      "result": "deployed without an init call, so the 30 receipts and the 14 request ids of the historical contract were still there",
+      "what": "the remediated contract is deployed in place, the state carried over"
+    },
+    {
+      "check": {
+        "kind": "migration"
+      },
+      "hash": null,
+      "result": "the migration is complete, the request index holds 15 ids including the request the historical index had lost, and no historical record waits for the owner",
+      "what": "the legacy state is migrated in place"
+    },
+    {
+      "check": {
+        "id": 15,
+        "kind": "request"
+      },
+      "hash": "4FoF36c7kaoaTRFmjJpd5HSP8iP4rVG7tX6WWN6v5EyK",
+      "result": "request 15, the nonce is above every nonce the historical contract accepted",
+      "what": "the agent asks for 0.1 NEAR with the remediated contract"
+    },
+    {
+      "check": {
+        "id": 30,
+        "kind": "receipt"
+      },
+      "hash": "6FdubrFpDKXPbaN5mPMiD51LfM11kuP9skDmhNEPgx7R",
+      "result": "receipt 30, Approved, the receipt reports the settled and the reserved money apart",
+      "what": "the owner approves it and the transfer settles"
     }
   ],
-  "wasm_commit": "187fd92843d3a73702e19e95d13a06c36661c8a2"
+  "wasm_commit": "912b3da191ed44c3701c252eb870be0543622901"
 }

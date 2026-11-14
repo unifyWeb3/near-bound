@@ -12,7 +12,7 @@ This repository contains two artifacts that must not be conflated:
 | Artifact | State |
 | --- | --- |
 | Historical deployment at `bound-testnet-97685.testnet` | Live on testnet, with the code hash and Wasm sha256 in `docs/claims.json` |
-| Remediated source on `fix/audit-remediation` | Local and tested, not deployed, with its reproducible Wasm hash in `docs/wasm-lock.json` |
+| Remediated source on `master` | Deployed on testnet, with its reproducible Wasm hash in `docs/wasm-lock.json` |
 
 The remediated Wasm is not the historical Wasm. No redeployment, push,
 submission or public post is authorized by this work.
@@ -209,7 +209,8 @@ The historical console work addressed three concrete problems:
    loading and error states, and keyboard-accessible controls.
 3. The historical contract had no per-agent receipt index, request expiry or
    migration path. The remediated source adds those capabilities without
-   changing the frozen state root. This source is not deployed.
+   changing the frozen state root. The deployed artifact was built from this
+   source and its hash is recorded in `docs/claims.json`.
 
 The recorded wallet and UI checks are local evidence from the historical
 session. A human still has to complete wallet authentication and confirm the

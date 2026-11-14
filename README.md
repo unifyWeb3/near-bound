@@ -15,12 +15,15 @@ so an agent that cannot change the rules cannot get around them, and a reader
 can check what happened without trusting the console.
 
 - Repository: `unifyWeb3/near-bound`
-- Historical console: <https://near-bound.vercel.app/>
-- Historical contract on testnet: `bound-testnet-97685.testnet`
+- Console: <https://near-bound.vercel.app/>
+- Contract on testnet: `bound-testnet-97685.testnet`
 - Licence: MIT
 
-The remediated contract in this branch is local and undeployed. Its Wasm hash
-is tracked separately from the historical deployment.
+The remediated contract is deployed on testnet. It replaced the older artifact
+in place, without an init call, so the receipts and the requests of the
+earlier contract were carried over and the owner migrated the state in one
+owner call. The Wasm that is on the chain is the one this repository builds,
+and its hash is checked by CI and by `docs/claims.json`.
 
 ## Try it in five minutes
 
@@ -50,14 +53,13 @@ protocol before the contract runs:
 | no deposit allowed | the key cannot attach NEAR to a call |
 | a gas allowance | the key cannot afford a call the owner did not budget for |
 
-`demo/protocol_arm.sh` runs those four refusals against the historical live
-deployment and prints the protocol's own error for each one. The output of the
-recorded run is in `demo/protocol_arm.out`.
+`demo/protocol_arm.sh` runs those four refusals against the live deployment
+and prints the protocol's own error for each one. The output of the recorded
+run is in `demo/protocol_arm.out`.
 
 ## The contract interface
 
-This table describes the remediated source in this branch. The historical
-deployment exposes an older subset of it.
+This table describes the contract that is on the chain.
 
 Arguments are JSON objects, the same shape the NEAR CLI sends with
 `json-args`. The console signs the same bytes.
@@ -131,8 +133,7 @@ callback still never arrives, the owner closes the request with
 ## Evidence
 
 Every chain-derived figure in this repository comes from a script that reads
-the historical deployment. Source constants and test counts are labelled as
-such.
+the live deployment. Source constants and test counts are labelled as such.
 
 ```bash
 python3 scripts/claims.py          # write docs/CLAIMS.md and docs/claims.json
@@ -147,7 +148,7 @@ repository.
 <!-- evidence:start -->
 | What | Transaction | Result | Branch |
 | --- | --- | --- | --- |
-| the contract is upgraded in place, the state carried over | [Bb64yQtpRcu1](https://explorer.testnet.near.org/transactions/Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls) | deployed, code hash HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d, sha256 f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e | testnet only |
+| the contract is upgraded in place, the state carried over | [Bb64yQtpRcu1](https://explorer.testnet.near.org/transactions/Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls) | deployed, code hash GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs, sha256 e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa | testnet only |
 | the agent is given NEAR for gas | [HnHYC226AEEa](https://explorer.testnet.near.org/transactions/HnHYC226AEEaM4L8kuekL86jTp1ur8bnfQEATCpcfsPG) | the agent account can make a call | testnet only |
 | the first of two requests for 1 NEAR | [EEHzgVkt4HXT](https://explorer.testnet.near.org/transactions/EEHzgVkt4HXTHCriHq335fpP97Kp6ZQ9M2EmSXfHKjqS) | request 10 | testnet only |
 | the second of two requests for 1 NEAR | [GebCsWA4K5S2](https://explorer.testnet.near.org/transactions/GebCsWA4K5S2GHfM1QzmymoQ2p8d1qp6hBsKAcfMsmDb) | request 11 | testnet only |
@@ -162,6 +163,10 @@ repository.
 | the agent asks to pay the vendor that does not exist | [Cc6rmKhH5gAa](https://explorer.testnet.near.org/transactions/Cc6rmKhH5gAa89cqARW9zhy2jiFbEGrDnZtm9RmKA9yf) | request 9 | testnet only |
 | the owner approves it | [4JTiK48kgmGw](https://explorer.testnet.near.org/transactions/4JTiK48kgmGwLJxjjtdDLEZn7gZhvGVKpqJgT7sXvQRm) | receipt 18, Failed TransferFailed, the budget came back | testnet only |
 | the owner removes the vendor that does not exist | [3RgJLNZ5rF4z](https://explorer.testnet.near.org/transactions/3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S) | the allowlist is back to one vendor | testnet only |
+| the remediated contract is deployed in place, the state carried over | [74PGYcLQ3drC](https://explorer.testnet.near.org/transactions/74PGYcLQ3drCFUzFAju48nfECM7CddWpRVTiX7Xrikfs) | deployed, code hash GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs, sha256 e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa | testnet only |
+| the legacy state is migrated in place | no transaction, the state is the evidence | the migration is complete, the request index holds 15 ids including the request the historical index had lost, and no historical record waits for the owner | testnet only |
+| the agent asks for 0.1 NEAR with the remediated contract | [4FoF36c7kaoa](https://explorer.testnet.near.org/transactions/4FoF36c7kaoaTRFmjJpd5HSP8iP4rVG7tX6WWN6v5EyK) | request 15, the nonce is above every nonce the historical contract accepted | testnet only |
+| the owner approves it and the transfer settles | [6FdubrFpDKXP](https://explorer.testnet.near.org/transactions/6FdubrFpDKXPbaN5mPMiD51LfM11kuP9skDmhNEPgx7R) | receipt 30, Approved, the receipt reports the settled and the reserved money apart | testnet only |
 
 Every row can be checked with the public testnet RPC, with no key and no
 explorer. Nearblocks answers a script with a 403, and the public RPC has
@@ -214,6 +219,18 @@ curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"
 # the owner removes the vendor that does not exist
 curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"eyJhZ2VudF9pZCI6ICJib3VuZC1hZ2VudC50ZXN0bmV0In0=","finality":"final"}}'
 
+# the remediated contract is deployed in place, the state carried over
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","account_id":"bound-testnet-97685.testnet","finality":"final"}}'
+
+# the legacy state is migrated in place
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_migration_status","args_base64":"e30=","finality":"final"}}'
+
+# the agent asks for 0.1 NEAR with the remediated contract
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogMTV9","finality":"final"}}'
+
+# the owner approves it and the transfer settles
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMzB9","finality":"final"}}'
+
 ```
 
 Every one of these is on testnet. Nothing here has been run on mainnet, and
@@ -234,9 +251,9 @@ bash scripts/build-wasm.sh
 
 | Claim | State |
 | --- | --- |
-| The historical contract and its receipts | Real, on testnet, and still live |
-| The remediated contract source | Local and tested, but not deployed |
-| The refusal reasons on the historical receipts | Real, written by the historical contract |
+| The contract and its receipts | Real, on testnet, and live |
+| The remediated contract source | The source of the live artifact. The Wasm on the chain is the one this repository builds |
+| The refusal reasons on the older receipts | Real, written by the older artifact, and kept byte for byte |
 | The console figures | Read from the selected deployment when the page opens |
 | The console on a failed read | The last good read, marked stale. Never a guessed number |
 | What the contract buys | Nothing. It moves NEAR to the counterparty account with a plain transfer under the policy |
@@ -270,10 +287,11 @@ here, with tests.
 The full table, with the checks that cover each line, is in
 [docs/AUDIT-REMEDIATION.md](docs/AUDIT-REMEDIATION.md).
 
-The live deployment still carries the previous artifact. The hash of the
-deployed contract is in [docs/CLAIMS.md](docs/CLAIMS.md), and the hash of the
-artifact this source builds is in [docs/wasm-lock.json](docs/wasm-lock.json).
-They differ, because this source has not been deployed.
+The live deployment carries the artifact this source builds. Its hash is in
+[docs/CLAIMS.md](docs/CLAIMS.md), and the expected hash of the artifact is in
+[docs/wasm-lock.json](docs/wasm-lock.json). CI fails when the build produces
+different bytes, and the deployed code hash was read back from the chain after
+the deployment.
 
 ## Run it locally
 

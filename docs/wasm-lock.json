@@ -11,5 +11,5 @@
     "--enable-bulk-memory"
   ],
   "built_with": "scripts/build-wasm.sh",
-  "note": "This is the artifact built from this source. CI rebuilds it and fails when the bytes differ. The live deployment on testnet carries an older artifact, and its hash stays in docs/claims.json."
+  "note": "This is the artifact built from this source, and it is the artifact on the chain. CI rebuilds it and fails when the bytes differ. The live code hash is in docs/claims.json."
 }
