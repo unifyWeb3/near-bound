@@ -145,106 +145,63 @@ export async function connectWallet({ walletId } = {}) {
 
 /**
  * Sign out.
+ *
+ * The wallet session ends too, not only the state of this page. The selector
+ * keeps the chosen wallet in storage, so a sign out that only clears the
+ * page leaves the reader signed in on the next visit.
  */
 export async function disconnectWallet() {
+  try {
+    const connector = await getConnector();
+    await connector.disconnect();
+  } catch {
+    // The wallet may already be signed out. The state below still clears.
+  }
   walletState.status = 'idle';
   walletState.accountId = null;
   walletState.walletId = null;
   walletState.error = null;
 }
 
-/* -------------------------------------------------------------------------- */
-/* The transaction bytes                                                       */
-/* -------------------------------------------------------------------------- */
-
-/**
- * A little Borsh writer, enough for a function call.
- */
-class Writer {
-  constructor() {
-    this.bytes = [];
-  }
-
-  u8(value) {
-    this.bytes.push(value & 0xff);
-    return this;
-  }
-
-  u32(value) {
-    this.u8(value);
-    this.u8(value >>> 8);
-    this.u8(value >>> 16);
-    this.u8(value >>> 24);
-    return this;
-  }
-
-  u64(value) {
-    const big = BigInt(value);
-    for (let index = 0; index < 8; index += 1) {
-      this.bytes.push(Number((big >> BigInt(index * 8)) & 0xffn));
-    }
-    return this;
-  }
-
-  u128(value) {
-    const big = BigInt(value);
-    for (let index = 0; index < 16; index += 1) {
-      this.bytes.push(Number((big >> BigInt(index * 8)) & 0xffn));
-    }
-    return this;
-  }
-
-  /** A length prefixed string. */
-  str(value) {
-    const encoded = new TextEncoder().encode(value);
-    this.u32(encoded.length);
-    for (const byte of encoded) this.bytes.push(byte);
-    return this;
-  }
-
-  /** A length prefixed list of bytes. */
-  bytes(value) {
-    this.u32(value.length);
-    for (const byte of value) this.bytes.push(byte);
-    return this;
-  }
-}
-
-/**
- * The Borsh bytes of the arguments of a contract method.
- *
- * The contract's methods take plain types, so the arguments are Borsh encoded.
- * The wallet signs the bytes, which is what the chain expects.
- *
- * @param {Array<boolean|number|bigint|string>} values
- * @returns {Uint8Array}
- */
-export function encodeArgs(values) {
-  const writer = new Writer();
-  for (const value of values) {
-    if (typeof value === 'boolean') writer.u8(value ? 1 : 0);
-    else if (typeof value === 'number' || typeof value === 'bigint') {
-      if (BigInt(value) >= 0n && BigInt(value) <= 0xffffffffn) writer.u32(Number(value));
-      else writer.u64(value);
-    } else if (typeof value === 'string') writer.str(value);
-    else throw new Error(`cannot encode ${typeof value}`);
-  }
-  return new Uint8Array(writer.bytes);
-}
-
 /**
  * Ask the wallet to sign one call on the contract and send it.
+ *
+ * The arguments are a near-sdk JSON argument object: the object is
+ * JSON.stringified and signed as the function-call arguments. Positional
+ * Borsh arrays are never used, so values above 2^53 stay exact.
  *
  * @param {object} options
  * @param {{contract: string}} options.deployment
  * @param {string} options.method
- * @param {Array} options.args
+ * @param {object} options.args A JSON argument object for the contract method.
  * @param {string} [options.accountId]
  * @returns {Promise<{hash: string|null, error: string|null}>}
  */
+/**
+ * The arguments of one contract call, as the wallet signs them.
+ *
+ * A near-sdk JSON argument object: JSON.stringified, UTF-8 encoded. Positional
+ * Borsh arrays are never used.
+ *
+ * @param {object} args
+ * @returns {Uint8Array}
+ */
+export function jsonArgs(args) {
+  if (args === null || typeof args !== 'object' || Array.isArray(args)) {
+    throw new Error('contract arguments must be a JSON object');
+  }
+  return new TextEncoder().encode(JSON.stringify(args));
+}
+
 export async function signAndSend({ deployment, method, args, accountId }) {
   const signerId = accountId ?? walletState.accountId;
   if (!signerId) return { hash: null, error: 'no wallet is connected' };
+  let argBytes;
+  try {
+    argBytes = jsonArgs(args);
+  } catch (error) {
+    return { hash: null, error: String(error.message ?? error) };
+  }
   try {
     const connector = await getConnector();
     const wallet = await connector.connect({ walletId: walletState.walletId });
@@ -256,7 +213,7 @@ export async function signAndSend({ deployment, method, args, accountId }) {
           type: 'FunctionCall',
           params: {
             methodName: method,
-            args: encodeArgs(args),
+            args: argBytes,
             gas: GAS,
             deposit: '0',
           },

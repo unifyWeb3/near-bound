@@ -90,9 +90,10 @@ pub struct Policy {
 ///
 /// The times are in seconds since the epoch. See `Policy::period_start`.
 pub fn roll_period(policy: &Policy, now: u64) -> (u64, u128) {
-    if policy.period_seconds == 0 {
-        return (now, 0);
-    }
+    assert!(
+        policy.period_seconds > 0,
+        "a policy period must be longer than zero"
+    );
     if now.saturating_sub(policy.period_start) >= policy.period_seconds {
         (now, 0)
     } else {
@@ -212,7 +213,20 @@ pub fn evaluate(
         );
     }
 
-    if spent.saturating_add(amount) > policy.budget {
+    let Some(next_spent) = spent.checked_add(amount) else {
+        return Evaluation::deny(
+            "BudgetExceeded",
+            "the spend would exceed the period budget",
+            vec![
+                format!("spent {} of {}", spent, policy.budget),
+                format!("requested {}", amount),
+            ],
+            period_start,
+            spent,
+            remaining,
+        );
+    };
+    if next_spent > policy.budget {
         return Evaluation::deny(
             "BudgetExceeded",
             "the spend would exceed the period budget",
@@ -226,7 +240,7 @@ pub fn evaluate(
         );
     }
 
-    let spent = spent + amount;
+    let spent = next_spent;
     Evaluation {
         allowed: true,
         reason: String::new(),
@@ -236,6 +250,53 @@ pub fn evaluate(
         spent,
         remaining: policy.budget.saturating_sub(spent),
     }
+}
+
+/// The largest budget a policy may hold, in yoctoNEAR.
+///
+/// 10^25 yoctoNEAR is 10 NEAR. The limit is above the 5 NEAR budget used by
+/// the historical testnet deployment, so the compatibility migration can
+/// keep that policy unchanged.
+pub const MAX_BUDGET: u128 = 10_000_000_000_000_000_000_000_000;
+
+/// The longest memo a request may carry, in bytes.
+pub const MAX_MEMO_BYTES: usize = 1024;
+
+/// The most reasons one flag may carry.
+pub const MAX_REASON_COUNT: usize = 10;
+
+/// The most bytes the reasons of one flag may take together.
+pub const MAX_REASON_BYTES: usize = 4096;
+
+/// The most receivers one agent may allow.
+pub const MAX_VENDOR_COUNT: usize = 100;
+
+/// Check that the sizes the owner and the agent control stay inside the
+/// bounds the contract accepts.
+///
+/// A zero value means the caller is not checking that field, so a single
+/// call can check a budget and a vendor list together. The rules live here
+/// rather than in the contract so they can be tested without a chain.
+pub fn validate_bounds(
+    budget: u128,
+    memo_bytes: usize,
+    reason_count: usize,
+    reason_bytes: usize,
+    vendor_count: usize,
+) -> bool {
+    if budget > MAX_BUDGET {
+        return false;
+    }
+    if memo_bytes > MAX_MEMO_BYTES {
+        return false;
+    }
+    if reason_count > MAX_REASON_COUNT || reason_bytes > MAX_REASON_BYTES {
+        return false;
+    }
+    if vendor_count > MAX_VENDOR_COUNT {
+        return false;
+    }
+    true
 }
 
 #[cfg(test)]
@@ -412,5 +473,64 @@ mod tests {
             assert!(decision.rule.len() > 10);
             assert!(!decision.reason.is_empty());
         }
+    }
+
+    #[test]
+    fn budget_bounds_validation_accepts_the_live_policy() {
+        // 5 NEAR, the budget the demo deployment runs.
+        assert!(validate_bounds(
+            5_000_000_000_000_000_000_000_000,
+            100,
+            2,
+            500,
+            5
+        ));
+        assert!(validate_bounds(1, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn budget_bounds_validation_accepts_the_maximum_budget() {
+        assert!(validate_bounds(MAX_BUDGET, 0, 0, 0, 0));
+    }
+
+    #[test]
+    fn budget_bounds_validation_rejects_excessive_budget() {
+        assert!(!validate_bounds(MAX_BUDGET + 1, 100, 2, 500, 5));
+    }
+
+    #[test]
+    fn bounds_validation_rejects_oversized_memo() {
+        assert!(!validate_bounds(1_000, MAX_MEMO_BYTES + 1, 0, 0, 0));
+    }
+
+    #[test]
+    fn bounds_validation_accepts_a_memo_at_the_limit() {
+        assert!(validate_bounds(1_000, MAX_MEMO_BYTES, 0, 0, 0));
+    }
+
+    #[test]
+    fn bounds_validation_rejects_too_many_reasons() {
+        assert!(!validate_bounds(1_000, 0, MAX_REASON_COUNT + 1, 100, 0));
+    }
+
+    #[test]
+    fn bounds_validation_rejects_oversized_reasons() {
+        assert!(!validate_bounds(1_000, 0, 1, MAX_REASON_BYTES + 1, 0));
+    }
+
+    #[test]
+    fn bounds_validation_rejects_too_many_vendors() {
+        assert!(!validate_bounds(1_000, 0, 0, 0, MAX_VENDOR_COUNT + 1));
+    }
+
+    #[test]
+    fn an_overflowing_budget_projection_is_denied() {
+        let p = policy(|p| {
+            p.budget = u128::MAX;
+            p.spent = u128::MAX - 5;
+        });
+        let decision = evaluate(&p, "vendor-a.testnet", 10, 1, NOW, false);
+        assert!(!decision.allowed);
+        assert_eq!(decision.reason, "BudgetExceeded");
     }
 }

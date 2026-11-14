@@ -1,5 +1,9 @@
 /**
  * The ledger: every decision, filtered, paged.
+ *
+ * The page shows a bounded newest-first page rather than every receipt, and
+ * distinguishes the agent's receipts on the page from the global receipt
+ * count on chain. No count is inferred from a filtered page size.
  */
 
 import { el, mount } from '../lib/dom.js';
@@ -7,7 +11,7 @@ import { formatCount } from '../lib/format.js';
 import { emptyState } from '../components/empty.js';
 import { receiptCard } from './receipt-card.js';
 
-export const PAGE_SIZE = 25;
+export const PAGE_LIMIT = 25;
 
 /**
  * The filter row.
@@ -44,7 +48,7 @@ export function renderFilters(state, update) {
 }
 
 /**
- * The decisions.
+ * The decisions on this page.
  *
  * @param {object} state
  */
@@ -52,7 +56,9 @@ export function renderLedger(state) {
   const host = document.getElementById('ledger-list');
   if (!host) return;
   const filter = state.filter ?? { outcome: 'all', text: '' };
-  const matched = state.ledger.receipts.filter((receipt) => {
+  const ledger = state.ledger ?? {};
+  const receipts = ledger.receipts ?? [];
+  const matched = receipts.filter((receipt) => {
     if (filter.outcome && filter.outcome !== 'all' && receipt.outcome !== filter.outcome) return false;
     if (filter.text) {
       const haystack = `${receipt.memo} ${receipt.vendor} ${receipt.receipt_id}`.toLowerCase();
@@ -63,16 +69,21 @@ export function renderLedger(state) {
 
   const count = document.getElementById('ledger-count');
   if (count) {
-    count.textContent = `${formatCount(matched.length)} for this agent, of ${formatCount(state.ledger.total)} on chain`;
+    const agent = formatCount(matched.length);
+    const global = ledger.globalTotal == null ? 'unknown' : formatCount(ledger.globalTotal);
+    count.textContent =
+      ledger.fallback
+        ? `${agent} for this agent on this page (historical fallback), ${global} receipts on chain`
+        : `${agent} for this agent on this page, ${global} receipts on chain`;
   }
   const unread = document.getElementById('ledger-unread');
   if (unread) {
-    unread.textContent = state.ledger.unread
-      ? `${state.ledger.unread} receipts of this agent are not read yet`
+    unread.textContent = ledger.errors
+      ? `${ledger.errors} receipt read${ledger.errors === 1 ? '' : 's'} could not complete`
       : '';
   }
 
-  const visible = state.visible ?? PAGE_SIZE;
+  const visible = state.visible ?? PAGE_LIMIT;
   if (matched.length === 0) {
     mount(host, emptyState('No decisions match. Clear the filter, or point the console at another agent.'));
   } else {
@@ -81,7 +92,29 @@ export function renderLedger(state) {
 
   const more = document.getElementById('ledger-more');
   if (more) {
-    more.hidden = matched.length <= visible;
-    more.textContent = `Show ${Math.min(PAGE_SIZE, matched.length - visible)} more`;
+    const moreAvailable = matched.length > visible;
+    more.hidden = !moreAvailable;
+    more.textContent = `Show ${Math.min(PAGE_LIMIT, matched.length - visible)} more`;
+    more.disabled = Boolean(ledger.errors && !ledger.complete);
+    if (ledger.errors && !ledger.complete) {
+      more.title = 'Some receipts on this page could not be read.';
+    }
   }
+}
+
+/**
+ * A structured error summary for failed receipt reads, listing exact ids.
+ *
+ * @param {object} ledger
+ * @returns {HTMLElement|null}
+ */
+export function ledgerErrorSummary(ledger) {
+  if (!(ledger && ledger.errors > 0)) return null;
+  const failed = (ledger.failedIds ?? []).slice(0, 10).map((id) => `receipt #${id}`).join(', ');
+  const note = el('p', 'error-summary');
+  note.textContent = `Could not read ${ledger.errors} receipt${ledger.errors === 1 ? '' : 's'}${
+    failed ? ` (${failed})`
+    : ''
+  }. Showing what could be read, not a complete ledger.`;
+  return note;
 }

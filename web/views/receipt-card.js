@@ -37,7 +37,11 @@ export function receiptCard({ receipt, link = true, open = false }) {
 
   const meta = el('div', 'decision-meta');
   meta.append(el('span', null, `nonce ${receipt.nonce}`));
-  if (Number(receipt.request_id) > 0) {
+  // A receipt written when the agent asked and was refused has no request
+  // behind it, and the contract writes a sentinel id for that.
+  const requestId = String(receipt.request_id);
+  const hasRequest = requestId !== '18446744073709551615' && Number(receipt.request_id) > 0;
+  if (hasRequest) {
     const request = el('a', null, `request #${receipt.request_id}`);
     request.href = href('request', receipt.request_id);
     meta.append(request);

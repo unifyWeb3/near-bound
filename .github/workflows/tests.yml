@@ -5,13 +5,23 @@ on:
     branches: [master, 'fix/**']
   pull_request:
 
+env:
+  # The Rust toolchain is pinned in rust-toolchain.toml (1.99.1). The same
+  # toolchain is used for policy and contract so the wasm build is reproducible.
+  CARGO_HOME: /home/runner/.audit-cargo
+  RUSTFLAGS: >-
+    --remap-path-prefix=$GITHUB_WORKSPACE=repo
+    --remap-path-prefix=$CARGO_HOME/registry/src/index.crates.io-1949cf8c6b5b557f=registry
+
 jobs:
   policy:
     name: policy engine
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.99.1
+        with:
+          components: rustfmt, clippy
       - name: test
         working-directory: policy
         run: cargo test --locked
@@ -25,22 +35,8 @@ jobs:
   contract:
     name: contract
     runs-on: ubuntu-latest
-    env:
-      # The wasm carries the paths of the crates it was built from, so the
-      # build only gives the same bytes on every machine if the cargo home is
-      # in the same place. The README has the same recipe.
-      CARGO_HOME: /tmp/bound-cargo
-      # The wasm carries the paths of the crates it was built from. These two
-      # rewrites take the machine out of the bytes, so the artifact is the
-      # same everywhere.
-      RUSTFLAGS: >-
-        --remap-path-prefix=/home/runner/work/near-bound/near-bound=repo
-        --remap-path-prefix=/tmp/bound-cargo/registry/src/index.crates.io-1949cf8c6b5b557f=registry
     steps:
       - uses: actions/checkout@v4
-      # The rust version is pinned so the wasm this workflow builds is the
-      # same wasm that is on chain. The build has to be byte identical for
-      # the code hash to match.
       - uses: dtolnay/rust-toolchain@1.99.1
         with:
           components: rustfmt, clippy
@@ -54,23 +50,43 @@ jobs:
       - name: clippy
         working-directory: contract
         run: cargo clippy --all-targets --locked -- -D warnings
-      - name: build the wasm
-        working-directory: contract
-        run: cargo build --release --locked --target wasm32-unknown-unknown
-      - name: get wasm-opt
+      - name: build and optimise the wasm (deterministic double build)
+        run: bash scripts/build-wasm.sh
+      - name: the wasm matches the committed artifact hash
         run: |
-          curl -sL -o binaryen.tar.gz https://github.com/WebAssembly/binaryen/releases/download/version_133/binaryen-version_133-x86_64-linux.tar.gz
-          echo "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489  binaryen.tar.gz" | sha256sum -c -
-          tar xzf binaryen.tar.gz
-          echo "$PWD/binaryen-version_133/bin" >> "$GITHUB_PATH"
-      - name: optimise the wasm
-        working-directory: contract
+          expected="$(python3 -c 'import json;print(json.load(open("docs/wasm-lock.json"))["sha256"])')"
+          actual="$(sha256sum contract/target/wasm32-unknown-unknown/release/bound_contract.wasm | cut -d' ' -f1)"
+          if [ "$actual" != "$expected" ]; then
+            echo "wasm hash mismatch: built $actual, committed $expected" >&2
+            exit 1
+          fi
+          echo "wasm sha256 $actual matches docs/wasm-lock.json"
+      - name: shellcheck
         run: |
-          wasm-opt -Oz --enable-nontrapping-float-to-int --enable-bulk-memory \
-            target/wasm32-unknown-unknown/release/bound_contract.wasm -o bound_contract.wasm
-          sha256sum bound_contract.wasm
-      - name: the wasm
-        uses: actions/upload-artifact@v4
+          sudo apt-get update -y && sudo apt-get install -y shellcheck
+          shellcheck demo/agent.sh demo/protocol_arm.sh
+      - name: dependency vulnerability check
+        run: bash scripts/dependency-check.sh
+      - name: fake-NEAR shell tests
+        run: bash tests/fake-near/run.sh
+      - name: claims consistency check
+        run: python3 scripts/claims.py --check
+
+  web:
+    name: web tests
+    runs-on: ubuntu-latest
+    # web/package.json is added by the separate web task. Tolerate its absence
+    # until integration, then prefer running the Node test suite.
+    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
-          name: bound_contract.wasm
-          path: contract/bound_contract.wasm
+          node-version: '22'
+      - name: run the web Node tests
+        run: cd web && node --test test/*.test.js
+      - name: every module parses
+        run: |
+          for file in web/*.js web/lib/*.js web/views/*.js web/components/*.js; do
+            node --check "$file"
+          done

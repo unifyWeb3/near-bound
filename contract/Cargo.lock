@@ -183,6 +183,7 @@ dependencies = [
 name = "bound-contract"
 version = "0.1.0"
 dependencies = [
+ "borsh",
  "bound-policy",
  "near-parameters",
  "near-sdk",

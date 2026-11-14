@@ -1,6 +1,6 @@
-# SpendGuard: architecture, implementation, review and debugging
+# Certalyn: architecture, implementation, review and debugging
 
-This document answers the four tasks requested for the NEAR Hackathon `security` submission (SpendGuard, `bound-testnet-97685.testnet`). It describes the system as it runs, the implementation in this repository, the review findings, the optimizations applied, the component library, and the debugging work for the wallet connection and the console layout.
+This document answers the four tasks requested for the NEAR Hackathon `security` submission (Certalyn, `bound-testnet-97685.testnet`). It describes the system as it runs, the implementation in this repository, the review findings, the optimizations applied, the component library, and the debugging work for the wallet connection and the console layout.
 
 Evidence in this document comes from tool runs in this session against the local console (`http://127.0.0.1:8098`) and the live chain state already recorded in `docs/claims.json` and the repository. The console reads the public NEAR testnet RPC; no secret and no mainnet transaction was used.
 
@@ -8,7 +8,7 @@ Evidence in this document comes from tool runs in this session against the local
 
 ### Architecture
 
-SpendGuard is a static, client side console over a NEAR smart contract. The chain is the database and the policy engine. The browser reads the chain through the public JSON-RPC endpoint and writes by asking the reader's NEAR wallet to sign a transaction. There is no application server, no session store, and no backend secret.
+Certalyn is a static, client side console over a NEAR smart contract. The chain is the database and the policy engine. The browser reads the chain through the public JSON-RPC endpoint and writes by asking the reader's NEAR wallet to sign a transaction. There is no application server, no session store, and no backend secret.
 
 ```
 +------------------+        read (view calls)        +----------------------+

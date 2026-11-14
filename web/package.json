@@ -1,0 +1,9 @@
+{
+  "name": "certalyn-web-console",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Static console for Certalyn deployments on NEAR testnet",
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

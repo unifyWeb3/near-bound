@@ -34,6 +34,8 @@ export function renderHero(state) {
   const approved = state.ledger.receipts.filter((receipt) => receipt.outcome === 'Approved');
   set('hero-receiptid', approved[0] ? `№ ${approved[0].receipt_id}` : 'none yet');
   set('hero-agent', state.deployment.agent.replace(/\.testnet$/, ''));
+  const label = document.getElementById('budget-meter-label');
+  if (label) label.textContent = 'Remaining';
 }
 
 /**
@@ -57,23 +59,36 @@ export function renderStats(state) {
 
   const cards = [
     stat({ label: 'Under management', value: formatNear(state.treasury ?? 0n), note: 'held by the contract' }),
-    stat({ label: 'Approved', value: formatCount(approved), note: 'reads on chain' }),
-    stat({ label: 'Blocked', value: formatCount(denied + failed), note: 'never paid out' }),
-    stat({ label: 'Allowed value', value: formatNear(allowed), note: 'moved to the counterparty' }),
-    stat({ label: 'Protected value', value: formatNear(protectedValue), note: 'refused by the policy' }),
-    stat({ label: 'Decisions', value: formatCount(ledger.total), note: 'for this agent' }),
+    stat({ label: 'Approved', value: formatCount(approved), note: 'on this page' }),
+    stat({ label: 'Blocked', value: formatCount(denied + failed), note: 'on this page, never paid out' }),
+    stat({ label: 'Allowed value', value: formatNear(allowed), note: 'moved to the counterparty on this page' }),
+    stat({ label: 'Protected value', value: formatNear(protectedValue), note: 'refused by the policy on this page' }),
+    stat({
+      label: 'Decisions for this agent',
+      value: formatCount(ledger.agentTotal ?? receipts.length),
+      note: 'on chain',
+    }),
   ];
   const host = document.getElementById('stats-grid');
   mount(host, ...cards);
 
   const spent = BigInt(policy.spent);
   const sentence = el('p', 'governed');
-  const frozen = state.killSwitch ? 'Kill switch on, every agent frozen.' : 'Kill switch off.';
+  const frozen = state.killSwitch
+    ? 'The kill switch is on, so every agent is frozen.'
+    : 'The kill switch is off.';
   const since = new Date(Number(policy.period_start) * 1000).toLocaleDateString();
+  const period = Number(policy.period_seconds ?? 0);
+  const periodWord =
+    period >= 86400
+      ? `${Math.round(period / 86400)} day${period >= 172800 ? 's' : ''}`
+      : period >= 3600
+        ? `${Math.round(period / 3600)} hour${period >= 7200 ? 's' : ''}`
+        : `${period} seconds`;
   sentence.textContent =
     spent > 0n
-      ? `${frozen} Governed since ${since}. ${formatNear(spent)} allowed through this hour.`
-      : `${frozen} Governed since ${since}. The current hour is clean.`;
+      ? `${frozen} Governed since ${since}. ${formatNear(spent)} allowed through this ${periodWord}.`
+      : `${frozen} Governed since ${since}. The current ${periodWord} is clean.`;
   host.append(sentence);
 }
 

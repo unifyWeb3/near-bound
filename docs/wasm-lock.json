@@ -1,0 +1,15 @@
+{
+  "product": "Certalyn",
+  "artifact": "contract/target/wasm32-unknown-unknown/release/bound_contract.wasm",
+  "sha256": "cabdcfcee9fbd719e69a3723ad9d9d60ac54581b1635f4248c4729aa9bca0d76",
+  "toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+  "binaryen_version": "version_133",
+  "binaryen_sha256": "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489",
+  "wasm_opt_flags": [
+    "-Oz",
+    "--enable-nontrapping-float-to-int",
+    "--enable-bulk-memory"
+  ],
+  "built_with": "scripts/build-wasm.sh",
+  "note": "This is the artifact built from this source. CI rebuilds it and fails when the bytes differ. The live deployment on testnet carries an older artifact, and its hash stays in docs/claims.json."
+}

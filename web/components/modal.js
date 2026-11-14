@@ -52,7 +52,7 @@ export function openModal({ title, description, render, onClose, closeLabel = 'C
   const finish = () => {
     document.removeEventListener('keydown', onKey, true);
     backdrop.remove();
-    if (previous instanceof HTMLElement) previous.focus();
+    if (typeof HTMLElement !== 'undefined' && previous instanceof HTMLElement) previous.focus();
     onClose?.();
   };
 

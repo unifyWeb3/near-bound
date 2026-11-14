@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""Deterministic fake `near` CLI for exercising demo/agent.sh and demo/protocol_arm.sh.
+
+No testnet, no keys, no spending. Reads/writes a JSON state file (default
+state.json next to this script, overridable with FAKE_NEAR_STATE) so nonce
+behavior is deterministic across runs.
+
+The demo scripts parse these forms of output:
+
+  * view calls:  a line `return value (printed to stdout):` followed by JSON
+  * tx calls:    `Transaction ID: <hash>` and optionally `succeeded`
+  * denied tx:   an error line on stderr (merged into stdout by the demo)
+
+Subcommands supported: the subset used by demo/agent.sh and demo/protocol_arm.sh.
+"""
+import base64
+import json
+import os
+import random
+import sys
+import uuid
+
+STATE_PATH = os.environ.get(
+    "FAKE_NEAR_STATE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
+)
+
+
+def load_state():
+    default = {
+        "last_nonce": {"bound-agent.testnet": 15},
+        "receipt_count": 30,
+        "receipts": {},
+    }
+    if os.path.exists(STATE_PATH):
+        try:
+            return json.load(open(STATE_PATH, "r", encoding="utf-8"))
+        except (ValueError, OSError):
+            return default
+    return default
+
+
+def save_state(state):
+    tmp = STATE_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump(state, f)
+    os.replace(tmp, STATE_PATH)
+
+
+def err(msg):
+    sys.stderr.write(msg + "\n")
+    sys.exit(1)
+
+
+def marker_json(value):
+    return "return value (printed to stdout):\n" + json.dumps(value) + "\n"
+
+
+def policy_for(agent):
+    state = load_state()
+    return {
+        "agent_id": agent,
+        "budget": "5000000000000000000000000",
+        "spent": "0",
+        "remaining": "5000000000000000000000000",
+        "period_seconds": 3600,
+        "period_start": 1794403451,
+        "rate_count": 1,
+        "rate_limit": 5,
+        "vendors": ["bound-vendor.testnet"],
+        "max_single_spend": "1000000000000000000000000",
+        "last_nonce": state["last_nonce"].get(agent, 0),
+        "revoked": False,
+        "request_count": 14,
+    }
+
+
+def receipt_for(receipt_id):
+    return {
+        "receipt_id": int(receipt_id),
+        "outcome": "Denied",
+        "reason": "BudgetExceeded",
+        "rule": "the spend would exceed the period budget",
+        "evidence": ["budget 5 NEAR, spent 0 NEAR, amount 1 NEAR"],
+        "amount": "1000000000000000000000000",
+    }
+
+
+def main(argv):
+    if len(argv) < 6:
+        err("fake near: usage: near contract call-function <as-read-only|as-transaction> <account> <method> ...")
+
+    kind = argv[2]          # contract
+    mode = argv[3]          # as-read-only or as-transaction
+    account = argv[4]       # contract account
+    method = argv[5]        # method name
+
+    state = load_state()
+
+    if mode == "as-read-only":
+        if method == "get_receipt_count":
+            sys.stdout.write(marker_json(state["receipt_count"]))
+            return 0
+        if method == "get_policy":
+            # extract agent_id from json-args
+            agent = "bound-agent.testnet"
+            for i, a in enumerate(argv):
+                if a == "json-args" and i + 1 < len(argv):
+                    try:
+                        agent = json.loads(argv[i + 1]).get("agent_id", agent)
+                    except ValueError:
+                        pass
+            sys.stdout.write(marker_json(policy_for(agent)))
+            return 0
+        if method == "get_receipt":
+            rid = None
+            for i, a in enumerate(argv):
+                if a == "json-args" and i + 1 < len(argv):
+                    try:
+                        rid = json.loads(argv[i + 1]).get("receipt_id")
+                    except ValueError:
+                        pass
+            sys.stdout.write(marker_json(receipt_for(rid if rid is not None else 0)))
+            return 0
+        if method == "get_kill_switch":
+            sys.stdout.write(marker_json(False))
+            return 0
+        err("fake near: unknown view method " + method)
+
+    if mode == "as-transaction":
+        alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        txid = "".join(alphabet[random.randrange(len(alphabet))] for _ in range(43))
+        sys.stdout.write("Transaction ID: " + txid + "\n")
+        # Decode base64-args or json-args to inspect the request.
+        args_json = None
+        for i, a in enumerate(argv):
+            if a in ("base64-args", "json-args") and i + 1 < len(argv):
+                raw = argv[i + 1]
+                if a == "base64-args":
+                    try:
+                        raw = base64.b64decode(raw).decode()
+                    except Exception:
+                        raw = "{}"
+                try:
+                    args_json = json.loads(raw)
+                except ValueError:
+                    args_json = None
+                break
+
+        # Simulate the contract's hard checks, method by method.
+        if method == "approve_request":
+            sys.stderr.write("Error: approve_request isn't allowed by the access key\n")
+            return 1
+        if method == "call_paid_api":
+            sys.stderr.write("Error: call_paid_api doesn't match the access key\n")
+            return 1
+
+        deposit = None
+        gas = None
+        for i, a in enumerate(argv):
+            if a == "attached-deposit" and i + 1 < len(argv):
+                deposit = argv[i + 1]
+            if a == "prepaid-gas" and i + 1 < len(argv):
+                gas = argv[i + 1]
+
+        if method == "request_spend":
+            vendor = (args_json or {}).get("vendor", "")
+            if vendor == "stranger.testnet":
+                sys.stderr.write("Error: VendorNotAllowed: vendor not in allowlist\n")
+                return 1
+            if deposit and deposit != "0 NEAR" and "yoctoNEAR" in deposit:
+                sys.stderr.write("Error: Having a deposit with a function call action is not allowed\n")
+                return 1
+            if gas and "300.0 Tgas" in gas:
+                sys.stderr.write("Error: the key does not have enough allowance\n")
+                return 1
+            # Successful request_spend: advance the agent's nonce and receipt count.
+            agent_id = (args_json or {}).get("agent_id")
+            if agent_id:
+                state["last_nonce"][agent_id] = state["last_nonce"].get(agent_id, 0) + 1
+            state["receipt_count"] = state.get("receipt_count", 30) + 1
+        save_state(state)
+        sys.stdout.write("succeeded\n")
+        outcome = {
+            "request_id": state.get("receipt_count", 30),
+            "approved": False,
+            "reason": "",
+            "rule": "the request passed every hard check and is waiting for the counterparty check",
+            "evidence": [],
+            "spent": "0",
+            "remaining": "5000000000000000000000000",
+        }
+        sys.stdout.write(marker_json(outcome))
+        return 0
+
+    err("fake near: unknown mode " + mode)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))

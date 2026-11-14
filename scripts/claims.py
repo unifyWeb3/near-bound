@@ -256,6 +256,29 @@ VOLATILE = {
     "transactions",
 }
 
+# Policy fields that legitimately change between reads of the live deployment
+# (period advances, spends accumulate, nonces and counters grow). They are
+# ignored by --check but reported as rolling so nothing is silently skipped.
+ROLLING_POLICY_FIELDS = {
+    "period_start",
+    "spent",
+    "remaining",
+    "rate_count",
+    "last_nonce",
+    "request_count",
+}
+
+# Policy invariants that must not drift between the recorded historical claim
+# and the live deployment.
+INVARIANT_POLICY_FIELDS = {
+    "budget",
+    "max_single_spend",
+    "rate_limit",
+    "period_seconds",
+    "vendors",
+    "revoked",
+}
+
 
 def lookup(data, path):
     if "." in path:
@@ -408,17 +431,27 @@ def main():
             if key in VOLATILE:
                 continue
             if key == "receipt_sha256":
+                # Historical immutable receipt hashes: every one must still match.
                 for receipt_id, digest in value.items():
                     if data["receipt_sha256"].get(receipt_id) != digest:
                         problems.append(f"receipt {receipt_id} does not match the recorded sha256")
                 continue
             if key == "policy":
+                rolling = []
+                for field in sorted(ROLLING_POLICY_FIELDS):
+                    if field in expected["policy"] or field in data.get("policy", {}):
+                        rolling.append(field)
+                if rolling:
+                    print("rolling policy fields ignored: " + ", ".join(rolling))
+                for field in sorted(INVARIANT_POLICY_FIELDS):
+                    if expected["policy"].get(field) != data["policy"].get(field):
+                        problems.append(
+                            f"policy.{field}: recorded {expected['policy'].get(field)!r}, "
+                            f"live {data['policy'].get(field)!r}"
+                        )
                 continue
             if data.get(key) != value:
                 problems.append(f"{key}: recorded {value!r}, live {data.get(key)!r}")
-        for key in ("budget", "max_single_spend", "rate_limit", "period_seconds", "vendors"):
-            if expected["policy"].get(key) != data["policy"].get(key):
-                problems.append(f"policy.{key}: recorded {expected['policy'].get(key)!r}, live {data['policy'].get(key)!r}")
         if problems:
             print("the live deployment does not match docs/claims.json")
             for problem in problems:

@@ -89,7 +89,7 @@ export async function renderRequest(state, id) {
   if (request.memo) meta.append(el('span', 'memo', request.memo));
   card.append(meta);
   const nodes = [card];
-  if (request.receipt_id) {
+  if (Number.isFinite(request.receipt_id)) {
     const link = el('a', 'decision-link', `receipt № ${request.receipt_id}`);
     link.href = href('receipt', request.receipt_id);
     nodes.push(link);

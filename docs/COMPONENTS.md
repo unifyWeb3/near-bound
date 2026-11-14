@@ -1,6 +1,6 @@
 # Console components
 
-The SpendGuard console is built from small DOM components with no framework. Text is always assigned as text, never injected as HTML from chain or user data.
+The Certalyn console is built from small DOM components with no framework. Text is always assigned as text, never injected as HTML from chain or user data.
 
 ## Primitives (`lib/dom.js`)
 

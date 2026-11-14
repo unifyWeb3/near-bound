@@ -9,6 +9,13 @@
 /// appended, never inserted, because the borsh discriminant of an enum
 /// variant is its position and inserting one would change how the stored
 /// values decode.
+///
+/// The same rule applies to the contract state root. A field cannot be added
+/// there either, so the facts the new accounting needs live in sidecar
+/// structs under their own storage prefixes. A sidecar key is independent of
+/// the state root, so it can be introduced by a redeploy that keeps the old
+/// state.
+use borsh::{BorshDeserialize, BorshSerialize};
 use near_sdk::{near, AccountId};
 
 /// The outcome of a spend attempt.
@@ -25,6 +32,8 @@ pub enum Outcome {
     /// The decision was made but the transfer did not go through, so no money
     /// moved and the budget was given back.
     Failed,
+    /// The request was closed without a decision on the money. Nothing moved.
+    Expired,
 }
 
 /// Where a request is in its life cycle.
@@ -48,6 +57,8 @@ pub enum RequestStatus {
     /// The owner approved but the transfer did not go through. The budget was
     /// given back and the receipt says so.
     SettlementFailed,
+    /// The request was closed without a decision on the money.
+    Expired,
 }
 
 /// One request for a spend.
@@ -87,7 +98,6 @@ pub struct Receipt {
     pub rule: String,
     /// The facts behind the decision.
     pub evidence: Vec<String>,
-    /// The start of the budget period this decision belongs to, in seconds.
     pub period_start: u64,
     pub spent_after: u128,
     pub remaining_after: u128,
@@ -127,4 +137,63 @@ pub struct PolicyView {
     pub last_nonce: u64,
     pub revoked: bool,
     pub request_count: u64,
+}
+
+/// A view of a request, for the app.
+///
+/// The stored `Request` cannot grow a field, so the expiry time travels in a
+/// sidecar and is joined into this view. `None` means the request carries no
+/// known expiry, which is the case for the requests written before the
+/// upgrade.
+#[near(serializers = [json])]
+#[derive(Clone)]
+pub struct RequestView {
+    pub request_id: u64,
+    pub agent_id: AccountId,
+    pub vendor: AccountId,
+    pub amount: u128,
+    pub nonce: u64,
+    pub memo: String,
+    pub status: RequestStatus,
+    pub created_at: u64,
+    pub receipt_id: Option<u64>,
+    pub flags: Vec<String>,
+    /// When the request expires, in seconds since the epoch.
+    pub expires_at: Option<u64>,
+}
+
+/// The authoritative amount used by one agent in one budget period.
+///
+/// `settled` is money that moved. `reserved` is money held for a transfer
+/// that has not settled yet. The compatibility field `Policy::spent` mirrors
+/// their sum, but this sidecar is the accounting source.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct PeriodTotals {
+    pub settled: u128,
+    pub reserved: u128,
+}
+
+impl PeriodTotals {
+    /// The amount this period has committed.
+    pub fn used(&self) -> u128 {
+        self.settled.saturating_add(self.reserved)
+    }
+}
+
+/// Request data that cannot be added to the frozen `Request` record.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct RequestMeta {
+    /// When the request expires, in seconds since the epoch.
+    pub expires_at: u64,
+    /// The period that holds the reservation. Zero means no reservation.
+    pub reserved_period_start: u64,
+}
+
+/// The two nonce watermarks of an agent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct NonceState {
+    /// The highest nonce ever accepted for a request.
+    pub accepted_nonce: u64,
+    /// The highest nonce ever approved.
+    pub approved_nonce: u64,
 }

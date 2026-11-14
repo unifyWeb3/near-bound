@@ -16,7 +16,7 @@
 export function el(tag, className, text, attrs) {
   const node = document.createElement(tag);
   if (className) node.className = className;
-  if (text instanceof Node) node.append(text);
+  if (text !== null && typeof text === 'object' && typeof text.appendChild === 'function') node.append(text);
   else if (text !== undefined && text !== null) node.textContent = String(text);
   if (attrs) {
     for (const [key, value] of Object.entries(attrs)) {

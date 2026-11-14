@@ -6,30 +6,42 @@
 import {
   getKillSwitch,
   getLedger,
+  getOpenRequests,
+  getOwner,
   getPolicy,
-  getRequests,
+  getRunner,
   getTreasuryBalance,
 } from './lib/api.js';
 import {
   createReceiptCache,
+  deploymentSame,
   isAccountId,
   readDeployment,
   writeDeployment,
 } from './lib/deployment.js';
 import { createRouter, href } from './lib/router.js';
 import { createStore } from './lib/store.js';
-import { connectWallet, signAndSend } from './lib/wallet.js';
+import { disconnectWallet, signAndSend } from './lib/wallet.js';
 import { el, mount } from './lib/dom.js';
+import { formatNear } from './lib/format.js';
 import { setErrorBar } from './components/alert.js';
 import { field } from './components/field.js';
 import { openWalletPicker } from './components/wallet-picker.js';
-import { renderCharts, renderHero, renderProtocolList, renderRecent, renderStats } from './views/overview.js';
-import { renderFilters, renderLedger, PAGE_SIZE } from './views/ledger.js';
+import { openConfirm } from './components/confirm.js';
+import {
+  renderCharts,
+  renderHero,
+  renderProtocolList,
+  renderRecent,
+  renderStats,
+} from './views/overview.js';
+import { renderFilters, renderLedger, PAGE_LIMIT } from './views/ledger.js';
 import { renderPolicy } from './views/policy.js';
 import { renderReceipt, renderRequest } from './views/receipt.js';
 import { renderRequests } from './views/requests.js';
 import { renderEnable } from './views/enable.js';
 import { renderJudge } from './views/judge.js';
+import { chooseWriteMethod } from './lib/act.js';
 
 const deployment = readDeployment();
 const cache = createReceiptCache();
@@ -39,18 +51,21 @@ const store = createStore({
   deployment,
   view: 'overview',
   filter: { outcome: 'all', text: '' },
-  ledger: { receipts: [], total: 0, errors: 0, unread: 0 },
+  ledger: { receipts: [], agentTotal: 0, globalTotal: 0, errors: 0, failedIds: [], complete: false, fallback: false, pageSize: PAGE_LIMIT, offset: 0 },
   policy: null,
   treasury: 0n,
   killSwitch: false,
-  requests: [],
+  requests: { items: [], owner: null, runner: null, errors: 0, failedIds: [], complete: false, fallback: false, openCount: 0, oldestOpenAge: null },
+  owner: null,
+  runner: null,
   loadedAt: null,
   loading: false,
   error: null,
   stale: false,
   wallet: { status: 'idle', accountId: null, walletId: null, error: null },
-  visible: PAGE_SIZE,
+  visible: PAGE_LIMIT,
   enableNames: { ...deployment },
+  actions: {},
 });
 
 const ROUTES = {
@@ -74,17 +89,21 @@ async function refresh() {
     button.textContent = 'Reading...';
   }
   try {
-    const [policy, treasury, killSwitch, ledger, requests] = await Promise.all([
+    const [policy, treasury, killSwitch, owner, runner, ledger, requests] = await Promise.all([
       getPolicy(state.deployment),
       getTreasuryBalance(state.deployment),
       getKillSwitch(state.deployment),
+      getOwner(state.deployment),
+      getRunner(state.deployment),
       getLedger(state.deployment, cache),
-      getRequests(state.deployment),
+      getOpenRequests(state.deployment),
     ]);
     store.set({
       policy,
       treasury,
       killSwitch,
+      owner,
+      runner,
       ledger,
       requests,
       loadedAt: new Date(),
@@ -110,6 +129,13 @@ async function refresh() {
   }
 }
 
+/** The filter callback, the same in the shell and in the route. */
+function onFilter(filter) {
+  store.set({ filter });
+  renderFilters(store.get(), onFilter);
+  renderLedger(store.get());
+}
+
 /** Paint everything the store holds. */
 function paint() {
   const state = store.get();
@@ -119,11 +145,7 @@ function paint() {
   renderRecent(state);
   renderFilters(state, (filter) => {
     store.set({ filter });
-    renderFilters(store.get(), (next) => {
-      store.set({ filter: next });
-      renderFilters(store.get(), () => {});
-      renderLedger(store.get());
-    });
+    renderFilters(store.get(), onFilter);
     renderLedger(store.get());
   });
   renderLedger(state);
@@ -138,18 +160,41 @@ function paint() {
   const stamp = document.getElementById('loaded');
   if (stamp) {
     stamp.textContent = state.loadedAt
-      ? `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.requests.length} requests, ${state.ledger.total} receipts on chain${state.stale ? ' (stale)' : ''}`
+      ? `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.requests.items.length} open requests, ${state.ledger.globalTotal ?? '?'} receipts on chain${state.stale ? ' (stale)' : ''}`
       : 'Reading the chain...';
   }
   if (state.ledger.errors > 0) {
     setErrorBar(
-      `Some chain calls failed (${state.ledger.errors} of ${state.ledger.total}). Showing what could be read, not a complete ledger.`,
+      `Some chain calls failed (${state.ledger.errors}). Showing what could be read, not a complete ledger.`,
+    );
+  }
+  if (state.requests.errors > 0) {
+    setErrorBar(
+      `Some request reads failed (${state.requests.errors}). Showing what could be read, not a complete request queue.`,
     );
   }
   const label = document.getElementById('deployment-label');
   if (label) label.textContent = state.deployment.contract;
   const agentLabel = document.getElementById('agent-label');
   if (agentLabel) agentLabel.textContent = state.deployment.agent;
+
+  const sideAgent = document.getElementById('side-agent');
+  if (sideAgent) sideAgent.textContent = state.deployment.agent;
+  const sideRemaining = document.getElementById('side-remaining');
+  if (sideRemaining) {
+    sideRemaining.textContent = state.policy
+      ? `${formatNear(state.policy.remaining)} left`
+      : 'reading the policy';
+  }
+  const sideState = document.getElementById('side-state');
+  if (sideState) {
+    sideState.textContent = state.killSwitch
+      ? 'every agent is frozen'
+      : state.stale
+        ? 'showing the last good read'
+        : 'the chain is being read live';
+  }
+
   paintWallet(state);
 }
 
@@ -181,28 +226,56 @@ function openPicker() {
 }
 
 /**
- * A write: ask the wallet to sign, then read the chain again.
+ * A write: decide which contract method matches the request status and the
+ * connected account's role, ask the wallet to sign, then read the chain again.
  *
  * @param {number} requestId
- * @param {string} method
- * @param {Array} args
+ * @param {'approve'|'reject'} action
+ * @param {string} reason
  */
-async function act(requestId, method, args) {
+async function act(requestId, action, reason) {
   const state = store.get();
   if (!state.wallet?.accountId) {
     openPicker();
     return;
   }
-  setErrorBar(null);
-  const result = await signAndSend({
-    deployment: state.deployment,
-    method,
-    args,
-    accountId: state.wallet.accountId,
-  });
-  if (result.error) {
-    setErrorBar(`The wallet did not send the transaction: ${result.error}`);
+  if (state.actions?.[requestId]) return; // A transaction for this request is in flight.
+
+  const request = state.requests.items.find((item) => Number(item.request_id) === Number(requestId));
+  const caller = state.wallet.accountId;
+  const agent = state.deployment.agent;
+
+  const method = chooseWriteMethod(
+    action,
+    request ? request.status : null,
+    caller,
+    state.owner,
+    state.runner,
+    agent,
+  );
+  if (!method) {
+    setErrorBar(`This account cannot ${action} request #${requestId}.`);
     return;
+  }
+
+  const args = action === 'reject' ? { request_id: requestId, reason } : { request_id: requestId };
+
+  store.set({ actions: { ...state.actions, [requestId]: 'submitting' } });
+  setErrorBar(null);
+  try {
+    const result = await signAndSend({
+      deployment: state.deployment,
+      method,
+      args,
+      accountId: caller,
+    });
+    if (result.error) {
+      setErrorBar(`The wallet did not send the transaction: ${result.error}`);
+      store.set({ actions: { ...state.actions, [requestId]: null } });
+      return;
+    }
+  } finally {
+    store.set({ actions: { ...state.actions, [requestId]: null } });
   }
   setErrorBar(null);
   await refresh();
@@ -227,7 +300,11 @@ function renderDeploymentPanel() {
           return;
         }
         const next = { ...state.deployment, [key]: value };
-        writeDeployment(next);
+        if (!deploymentSame(next, state.deployment)) {
+          writeDeployment(next);
+          cache.load(next);
+          cache.save(next);
+        }
         window.location.reload();
       },
     }).wrapper,
@@ -266,11 +343,14 @@ const router = createRouter(ROUTES, async (route) => {
 function wire() {
   document.getElementById('refresh')?.addEventListener('click', () => refresh());
   document.getElementById('ledger-more')?.addEventListener('click', () => {
-    const next = store.set({ visible: store.get().visible + PAGE_SIZE });
+    const next = store.set({ visible: store.get().visible + PAGE_LIMIT });
     renderLedger(next);
   });
-  document.getElementById('wallet-button')?.addEventListener('click', () => {
+  document.getElementById('wallet-button')?.addEventListener('click', async () => {
     if (store.get().wallet?.accountId) {
+      // The wallet session ends too, so the next visit does not silently
+      // sign the reader back in.
+      await disconnectWallet();
       store.set({ wallet: { status: 'idle', accountId: null, walletId: null, error: null } });
       paint();
       return;

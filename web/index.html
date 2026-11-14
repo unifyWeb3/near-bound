@@ -3,31 +3,34 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>SpendGuard - the spend limit behind your agent | NEAR testnet</title>
+    <title>Certalyn, a spend limit for an agent | NEAR testnet</title>
     <meta
       name="description"
-      content="SpendGuard gives a coding agent a NEAR allowance and an on-chain policy that it cannot change. Every approved and blocked spend is a receipt a judge can read. Free on NEAR testnet."
+      content="Certalyn holds an agent's money in a NEAR contract and enforces a policy the agent cannot change. Every approved and refused spend is a receipt. Testnet only, not audited."
     />
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23175e42'/%3E%3Cpath d='M8 21h16M8 15h16M8 9h16' stroke='%23f5f2ea' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E" />
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='4' fill='%23175e42'/%3E%3Cpath d='M9 21h14M9 15h14M9 9h14' stroke='%23f4f1e8' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E"
+    />
     <link rel="stylesheet" href="style.css" />
   </head>
   <body>
     <a class="skip-link" href="#main">Skip to content</a>
-    <div id="error-bar" class="error-bar" hidden></div>
+    <div id="error-bar" class="error-bar" role="alert" hidden></div>
 
     <header class="topbar">
-      <a class="brand-mark" href="#/overview"><span class="mark" aria-hidden="true">S</span>SpendGuard</a>
+      <a class="brand-mark" href="#/overview"><span class="mark" aria-hidden="true">C</span>Certalyn</a>
       <nav class="topnav" aria-label="Sections">
         <a href="#/overview" data-route="overview">Overview</a>
         <a href="#/policy" data-route="policy">Policy</a>
         <a href="#/requests" data-route="requests">Requests</a>
         <a href="#/ledger" data-route="ledger">Ledger</a>
-        <a href="#/enable" data-route="enable">Enable it</a>
-        <a href="#/judge" data-route="judge">Judge evidence</a>
+        <a href="#/enable" data-route="enable">Set up</a>
+        <a href="#/judge" data-route="judge">Evidence</a>
       </nav>
       <div class="topbar-right">
         <button id="deployment-toggle" class="ghost-button" type="button" title="Choose the deployment to read">
-          <span class="dot small"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
+          <span class="dot small" aria-hidden="true"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
         </button>
         <button id="wallet-button" class="ghost-button" type="button" aria-label="Connect a NEAR wallet">Connect wallet</button>
       </div>
@@ -35,11 +38,10 @@
 
     <div id="deployment-panel" class="deployment-panel" hidden>
       <div class="deployment-inner">
-        <h2 class="section-title">Read any SpendGuard deployment</h2>
+        <h2 class="panel-title">Read any Certalyn deployment</h2>
         <p class="muted small">
           The console reads the chain directly, so it can show any contract that follows the same
-          rules. The agent it reads for is
-          <span id="agent-label" class="mono"></span>.
+          rules. The agent it reads for is <span id="agent-label" class="mono"></span>.
         </p>
         <div id="deployment-form" class="deployment-fields"></div>
         <p class="muted small">
@@ -49,39 +51,58 @@
       </div>
     </div>
 
-    <main id="main">
-      <!-- Overview -->
-      <section class="view" id="view-overview">
-        <section class="hero">
-          <div class="hero-copy">
-            <p class="kicker">On NEAR testnet, open source, MIT, no backend</p>
-            <h1>The limit behind your agent.</h1>
-            <p class="lead">
-              An AI agent that has to pay for API credits or compute can be talked into paying.
-              SpendGuard puts a real ceiling behind it: the chain enforces the limit, every
-              attempt is a receipt, and one transaction revokes the agent completely. The
-              contract moves NEAR to the counterparty account under the policy.
-            </p>
-            <div class="cta">
-              <a class="button primary" href="#/enable">Enable it in 5 minutes</a>
-              <a class="button ghost" id="hero-ledger-link" href="#/ledger">See it working on testnet</a>
-            </div>
-            <ul class="proof">
-              <li><strong>Real, not a demo.</strong> Every figure on this page is read from the chain.</li>
-              <li><strong>One transaction lockout.</strong> Delete the key and the agent cannot sign a request at all.</li>
-              <li><strong>No backend.</strong> Nothing to trust, nothing to leak, nothing to go down.</li>
-            </ul>
-          </div>
+    <div class="shell">
+      <aside class="sidebar">
+        <nav class="sidebar-nav" aria-label="Sections">
+          <a href="#/overview" data-route="overview"><span class="index">01</span> Overview</a>
+          <a href="#/policy" data-route="policy"><span class="index">02</span> Policy</a>
+          <a href="#/requests" data-route="requests"><span class="index">03</span> Requests</a>
+          <a href="#/ledger" data-route="ledger"><span class="index">04</span> Ledger</a>
+          <a href="#/enable" data-route="enable"><span class="index">05</span> Set up</a>
+          <a href="#/judge" data-route="judge"><span class="index">06</span> Evidence</a>
+        </nav>
+        <div class="sidebar-note">
+          <span class="eyebrow">Reading</span>
+          <span class="value" id="side-agent">...</span>
+          <span class="value" id="side-remaining">...</span>
+          <span class="value" id="side-state">...</span>
+        </div>
+      </aside>
 
-          <aside class="hero-panel" aria-label="The policy of the deployment being read">
-            <div class="wallet-card">
+      <main id="main">
+        <!-- Overview -->
+        <section class="view" id="view-overview">
+          <section class="hero">
+            <div class="hero-copy">
+              <p class="kicker">NEAR testnet, open source, MIT, no backend</p>
+              <h1>Your agent can ask for money. <em>The chain decides.</em></h1>
+              <p class="lead">
+                Certalyn holds the money in a contract and enforces the limits you set. The agent
+                cannot move a yocto on its own, cannot widen its own budget, and every attempt
+                leaves a receipt with the rule that decided it.
+              </p>
+              <div class="cta">
+                <a class="button primary" href="#/enable">Set it up</a>
+                <a class="button ghost" id="hero-ledger-link" href="#/ledger">Read the ledger</a>
+              </div>
+              <ul class="proof">
+                <li>Every figure on this page is read from the chain when the page opens.</li>
+                <li>A refusal is a receipt, not an error string.</li>
+                <li>Deleting the agent's key stops it with one transaction.</li>
+                <li>Testnet only, not audited, no real money has moved.</li>
+              </ul>
+            </div>
+
+            <aside class="wallet-card" aria-label="The policy of the deployment being read">
               <div class="wallet-top">
                 <span class="wallet-label">Agent policy</span>
                 <span class="chip green">live on testnet</span>
               </div>
               <div class="wallet-name" id="hero-agent">agent</div>
               <div class="wallet-amount" id="hero-remaining">...</div>
-              <div class="wallet-budget-note">remaining of <span id="hero-budget">...</span> per hour</div>
+              <div class="wallet-budget-note">
+                <span id="budget-meter-label">Remaining</span> of <span id="hero-budget" aria-labelledby="budget-meter-label">...</span> per period
+              </div>
               <div class="budget-bar"><div class="budget-fill" id="hero-fill"></div></div>
               <div class="wallet-meta">
                 <div><span class="meta-label">Allowed receivers</span><span class="meta-value" id="hero-receivers">...</span></div>
@@ -89,136 +110,156 @@
                 <div><span class="meta-label">Rate limit</span><span class="meta-value" id="hero-ratelimit">...</span></div>
               </div>
               <div class="wallet-footer">
-                <span class="dot small"></span> Receipt id <span id="hero-receiptid">...</span> written on chain
+                <span class="dot small" aria-hidden="true"></span> Receipt <span id="hero-receiptid">...</span> written on chain
+              </div>
+            </aside>
+          </section>
+
+          <section class="section" id="live">
+            <div class="panel-head">
+              <h2 class="section-title">What the chain holds</h2>
+              <div class="controls">
+                <span id="loaded" class="muted small"></span>
+                <button id="refresh" class="ghost-button" type="button">Refresh</button>
               </div>
             </div>
-          </aside>
-        </section>
-
-        <section class="section" id="live">
-          <div class="panel-head">
-            <h2 class="section-title">Live on NEAR testnet</h2>
-            <div class="controls">
-              <span id="loaded" class="muted small"></span>
-              <button id="refresh" type="button">Refresh</button>
-            </div>
-          </div>
-          <div id="stats-grid" class="stats" aria-live="polite"></div>
-          <p class="muted small">
-            Every figure is read from the public testnet RPC at the moment you open this page.
-            Reproduce any of it yourself in the judge evidence.
-          </p>
-        </section>
-
-        <section class="section split">
-          <div class="panel feed-panel">
-            <h2 class="section-title">The newest decisions</h2>
-            <div id="recent-list" class="feed" aria-live="polite"></div>
-            <p class="muted small">
-              The ledger has every decision of this agent. <a href="#/ledger">Open the ledger</a>.
+            <div id="stats-grid" class="stats" aria-live="polite"></div>
+            <p class="muted small" style="margin-top: var(--s3)">
+              Read from the public testnet RPC at the moment the page opened. Reproduce any figure
+              in the evidence view.
             </p>
-          </div>
+          </section>
 
-          <div class="side-col">
-            <div class="panel chart-panel">
-              <h3 class="panel-title">Blocked by reason</h3>
-              <div id="chart-reasons" class="bars" data-tone="blocked"></div>
-              <h3 class="panel-title">Decisions by day</h3>
-              <div id="chart-timeline" class="bars"></div>
+          <section class="section split">
+            <div>
+              <h2 class="section-title">The newest decisions</h2>
+              <div id="recent-list" class="feed" aria-live="polite" style="margin-top: var(--s5)"></div>
+              <p class="muted small" style="margin-top: var(--s3)">
+                The ledger holds every decision of this agent. <a href="#/ledger">Open the ledger</a>.
+              </p>
             </div>
-            <div class="panel key-panel">
-              <h3 class="panel-title">The agent key cannot do this</h3>
-              <p class="muted small">The four refusals the protocol makes, captured by demo/protocol_arm.sh.</p>
-              <div id="protocol-list"></div>
+            <div class="side-col">
+              <div class="panel chart-panel">
+                <h3 class="panel-title">Refused by rule</h3>
+                <div id="chart-reasons" class="bars" data-tone="blocked" style="margin-top: var(--s4)"></div>
+                <h3 class="panel-title" style="margin-top: var(--s6)">Decisions by day</h3>
+                <div id="chart-timeline" class="bars" style="margin-top: var(--s4)"></div>
+              </div>
+              <div class="panel key-panel" style="margin-top: var(--s5)">
+                <h3 class="panel-title">What the agent key cannot do</h3>
+                <p class="muted small">
+                  The four refusals the protocol makes before the contract runs, captured by
+                  demo/protocol_arm.sh.
+                </p>
+                <div id="protocol-list"></div>
+              </div>
             </div>
+          </section>
+        </section>
+
+        <!-- Policy -->
+        <section class="view" id="view-policy" hidden>
+          <div class="section">
+            <div class="panel-head">
+              <h2 class="section-title">The policy</h2>
+              <span class="muted small">read from the contract, nothing stored here</span>
+            </div>
+            <div id="policy-view" class="panel"></div>
           </div>
         </section>
-      </section>
 
-      <!-- Policy -->
-      <section class="view" id="view-policy" hidden>
-        <div class="section">
-          <div class="panel-head">
-            <h2 class="section-title">The policy</h2>
-            <span class="muted small">read from the contract, nothing stored here</span>
+        <!-- Requests -->
+        <section class="view" id="view-requests" hidden>
+          <div class="section">
+            <div class="panel-head">
+              <h2 class="section-title">Requests waiting for a decision</h2>
+              <span id="requests-count" class="muted small"></span>
+            </div>
+            <div id="requests-view" class="feed"></div>
           </div>
-          <div id="policy-view" class="panel"></div>
-        </div>
-      </section>
+        </section>
 
-      <!-- Requests -->
-      <section class="view" id="view-requests" hidden>
-        <div class="section">
-          <div class="panel-head">
-            <h2 class="section-title">Requests waiting for the owner</h2>
-            <span id="requests-count" class="muted small"></span>
+        <!-- One decision -->
+        <section class="view" id="view-receipt" hidden>
+          <div class="section">
+            <div class="panel-head">
+              <h2 class="section-title">One decision</h2>
+              <a class="muted small" href="#/ledger">back to the ledger</a>
+            </div>
+            <div id="receipt-view" class="panel"></div>
           </div>
-          <div id="requests-view" class="feed"></div>
-        </div>
-      </section>
+        </section>
 
-      <!-- One decision -->
-      <section class="view" id="view-receipt" hidden>
-        <div class="section">
-          <div class="panel-head">
-            <h2 class="section-title">One decision</h2>
-            <a class="muted small" href="#/ledger">back to the ledger</a>
+        <!-- The ledger -->
+        <section class="view" id="view-ledger" hidden>
+          <div class="section">
+            <div class="panel-head">
+              <h2 class="section-title">The ledger</h2>
+              <span class="muted small">every decision of this agent, with the rule that decided it</span>
+            </div>
+            <div id="ledger-filters" class="filter-row"></div>
+            <div id="ledger-list" class="feed" aria-live="polite"></div>
+            <p id="ledger-count" class="muted small" style="margin-top: var(--s4)"></p>
+            <p id="ledger-unread" class="muted small"></p>
+            <button id="ledger-more" class="ghost-button" type="button" hidden style="margin-top: var(--s3)"></button>
           </div>
-          <div id="receipt-view" class="panel"></div>
-        </div>
-      </section>
+        </section>
 
-      <!-- The ledger -->
-      <section class="view" id="view-ledger" hidden>
-        <div class="section">
-          <div class="panel-head">
-            <h2 class="section-title">The ledger</h2>
-            <span class="muted small">every decision of this agent, with the rule that blocked it</span>
+        <!-- Set up -->
+        <section class="view" id="view-enable" hidden>
+          <div class="section">
+            <h2 class="section-title">Three accounts and eight commands</h2>
+            <p class="section-lead">
+              You need testnet NEAR, the <code>near</code> CLI and this repository. Put your own
+              account names in, and every command below is the command to run. Testnet NEAR is free
+              from the faucet.
+            </p>
+            <div id="enable-names" class="deployment-fields" style="margin-top: var(--s6)"></div>
+            <ol class="steps" id="steps"></ol>
           </div>
-          <div id="ledger-filters" class="filter-row"></div>
-          <div id="ledger-list" class="feed" aria-live="polite"></div>
-          <p id="ledger-count" class="muted small"></p>
-          <p id="ledger-unread" class="muted small"></p>
-          <button id="ledger-more" class="ghost-button" type="button" hidden></button>
-        </div>
-      </section>
+        </section>
 
-      <!-- Enable -->
-      <section class="view" id="view-enable" hidden>
-        <div class="section">
-          <h2 class="section-title">Enable it, three accounts and eight steps</h2>
-          <p class="section-lead">
-            You need testnet NEAR, the <code>near</code> CLI and the <code>bound</code> repository.
-            Put your own account names in, and every command below is the command to run.
-            Testnet NEAR is free.
-          </p>
-          <div id="enable-names" class="deployment-fields"></div>
-          <ol class="steps" id="steps"></ol>
-        </div>
-      </section>
-
-      <!-- Judge evidence -->
-      <section class="view" id="view-judge" hidden>
-        <div class="section">
-          <h2 class="section-title">Judge evidence</h2>
-          <p class="section-lead">
-            Every figure on this site comes from these calls. They need no key, no account and no
-            explorer, so they run anywhere.
-          </p>
-          <div class="panel judge-body" id="judge-body"></div>
-        </div>
-      </section>
-    </main>
+        <!-- Evidence -->
+        <section class="view" id="view-judge" hidden>
+          <div class="section">
+            <h2 class="section-title">Evidence</h2>
+            <p class="section-lead">
+              Every figure on this site comes from these calls. They need no key, no account and no
+              explorer, so they run anywhere.
+            </p>
+            <div class="judge-body" id="judge-body" style="margin-top: var(--s6)"></div>
+          </div>
+        </section>
+      </main>
+    </div>
 
     <footer>
       <div class="footer-top">
-        <div class="footer-brand">SpendGuard</div>
-        <p>A hard limit the agent cannot argue with. Testnet only; no real money has moved.</p>
+        <div>
+          <div class="footer-brand">Certalyn</div>
+          <p>
+            A spend limit for an agent that pays. The money lives in a NEAR contract, the limits
+            live in the same contract, and the agent can do neither. Testnet only. Not audited. No
+            real money has moved.
+          </p>
+        </div>
+        <div>
+          <p>
+            The contract moves NEAR to a counterparty account with a plain NEAR transfer under
+            the policy. A receipt proves the contract decided and the transfer settled. It does
+            not prove a service was delivered.
+          </p>
+        </div>
       </div>
       <div class="footer-links">
         <a href="https://testnet.nearblocks.io/address/bound-testnet-97685.testnet" rel="noreferrer noopener">contract on nearblocks</a>
+        <a href="https://github.com/unifyWeb3/near-bound" rel="noreferrer noopener">source on github</a>
+        <a href="#/judge">reproduce every figure</a>
       </div>
-      <div class="footer-note"><span>MIT licensed, built at NEAR Hackathon</span><span>Source at github.com/unifyWeb3/near-bound</span></div>
+      <div class="footer-note">
+        <span>MIT licensed, built at NEAR Hackathon</span>
+        <span>github.com/unifyWeb3/near-bound</span>
+      </div>
     </footer>
 
     <script type="module" src="app.js"></script>
