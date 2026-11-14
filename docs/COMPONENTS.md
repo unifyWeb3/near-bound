@@ -59,7 +59,12 @@ openWalletPicker({
 
 - `receiptCard({ receipt, link?, open? })` renders a decision with outcome, ids, amount, timestamp, memo, and expandable reason/rule/evidence. `link` makes the id a deep link; `open` expands the evidence.
 - `renderLedger`/`renderFilters` page and filter the receipt list. `renderOverview` composes hero, stats, charts and recent decisions. `renderPolicy`, `renderRequests`, `renderReceipt`, `renderRequest`, `renderEnable`, `renderJudge` render their routes.
+- `enableSteps(names)` returns the eight setup commands, each with the phase it belongs to. `SETUP_PHASES` names the five phases, and `renderEnable` groups the steps under them and fills the sticky rail. The rail is a button, not a hash link, because the hash belongs to the router.
 
 ## Accessibility and states
 
 Native controls (`button`, `a`, `input`, `details/summary`), labelled inputs, `aria-current` on the active nav route, `aria-live` regions for loading/status/feed updates, focus-visible outlines, skip link, and reduced-motion support. Every view has an empty state; reads surface errors in the page bar and keep the last good data marked stale.
+
+## The visual system
+
+One paper ground, one green, and a hairline rule between things. The type has three roles: a serif for the statements, a grotesque for reading, and a mono for anything the chain produced. The display size follows the viewport, the reading column is one measure, and the page has one entrance that plays once with a delay per element. A decision carries its state twice, as a colour on the margin rule and as a word in the badge, so the colour is never the only cue. The only motion that repeats on a loaded page is the live mark.

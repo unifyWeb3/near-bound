@@ -30,7 +30,7 @@
       </nav>
       <div class="topbar-right">
         <button id="deployment-toggle" class="ghost-button" type="button" title="Choose the deployment to read">
-          <span class="dot small" aria-hidden="true"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
+          <span class="dot small live" aria-hidden="true"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
         </button>
         <button id="wallet-button" class="ghost-button" type="button" aria-label="Connect a NEAR wallet">Connect wallet</button>
       </div>
@@ -74,18 +74,20 @@
         <section class="view" id="view-overview">
           <section class="hero">
             <div class="hero-copy">
-              <p class="kicker">NEAR testnet, open source, MIT, no backend</p>
-              <h1>Your agent can ask for money. <em>The chain decides.</em></h1>
-              <p class="lead">
+              <p class="kicker enter" style="--d: 40ms">NEAR testnet, open source, MIT, no backend</p>
+              <h1 class="enter" style="--d: 90ms">
+                Your agent can ask for money. <em>The chain decides.</em>
+              </h1>
+              <p class="lead enter" style="--d: 160ms">
                 Certalyn holds the money in a contract and enforces the limits you set. The agent
                 cannot move a yocto on its own, cannot widen its own budget, and every attempt
                 leaves a receipt with the rule that decided it.
               </p>
-              <div class="cta">
+              <div class="cta enter" style="--d: 230ms">
                 <a class="button primary" href="#/enable">Set it up</a>
                 <a class="button ghost" id="hero-ledger-link" href="#/ledger">Read the ledger</a>
               </div>
-              <ul class="proof">
+              <ul class="proof enter" style="--d: 300ms">
                 <li>Every figure on this page is read from the chain when the page opens.</li>
                 <li>A refusal is a receipt, not an error string.</li>
                 <li>Deleting the agent's key stops it with one transaction.</li>
@@ -93,7 +95,7 @@
               </ul>
             </div>
 
-            <aside class="wallet-card" aria-label="The policy of the deployment being read">
+            <aside class="wallet-card enter" style="--d: 180ms" aria-label="The policy of the deployment being read">
               <div class="wallet-top">
                 <span class="wallet-label">Agent policy</span>
                 <span class="chip green">live on testnet</span>
@@ -110,7 +112,7 @@
                 <div><span class="meta-label">Rate limit</span><span class="meta-value" id="hero-ratelimit">...</span></div>
               </div>
               <div class="wallet-footer">
-                <span class="dot small" aria-hidden="true"></span> Receipt <span id="hero-receiptid">...</span> written on chain
+                <span class="dot small live" aria-hidden="true"></span> Receipt <span id="hero-receiptid">...</span> written on chain
               </div>
             </aside>
           </section>
@@ -214,8 +216,13 @@
               account names in, and every command below is the command to run. Testnet NEAR is free
               from the faucet.
             </p>
-            <div id="enable-names" class="deployment-fields" style="margin-top: var(--s6)"></div>
-            <ol class="steps" id="steps"></ol>
+            <div class="setup-layout">
+              <nav id="setup-rail" class="setup-rail" aria-label="The phases of the setup"></nav>
+              <div class="setup-main">
+                <div id="enable-names" class="deployment-fields"></div>
+                <div id="steps"></div>
+              </div>
+            </div>
           </div>
         </section>
 

@@ -22,6 +22,9 @@ import { href } from '../lib/router.js';
  */
 export function receiptCard({ receipt, link = true, open = false }) {
   const item = el('article', 'decision');
+  // The state is a colour on the margin rule of the card. The badge beside
+  // it names the state, so the colour is never the only cue.
+  item.setAttribute('data-tone', outcomeLabel(receipt.outcome));
   const head = el('div', 'decision-head');
   head.append(badge(receipt.outcome, outcomeLabel(receipt.outcome)));
   if (link) {

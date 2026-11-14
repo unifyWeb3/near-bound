@@ -156,6 +156,9 @@ function oldestOpenAge(open, now) {
  */
 function requestCard(request, now, act, state) {
   const card = el('article', 'decision');
+  // The state is a colour on the margin rule of the card. The badge beside
+  // it names the state, so the colour is never the only cue.
+  card.setAttribute('data-tone', stateLabel(request.status));
   const head = el('div', 'decision-head');
   const timing = requestTiming(request, now);
   const tone = timing.expired ? 'denied' : stateLabel(request.status);

@@ -102,7 +102,17 @@
   --sidebar: 248px;
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --lift: 0 1px 2px rgba(27, 26, 21, 0.04), 0 18px 40px -28px rgba(27, 26, 21, 0.45);
+
+  /* The display scale. The size follows the viewport, so the line never
+     jumps between breakpoints. */
+  --display: clamp(40px, 4.8vw, 68px);
+  --display-2: clamp(26px, 2.3vw, 34px);
+  --display-3: clamp(21px, 1.7vw, 25px);
+  /* The width of a line of prose. A measure under sixty characters is
+     readable, and every reading column on the site uses it. */
+  --measure-text: 58ch;
 }
 
 * {
@@ -405,13 +415,13 @@ main {
 .section-title {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: 30px;
-  line-height: 1.15;
-  letter-spacing: -0.015em;
+  font-size: var(--display-2);
+  line-height: 1.12;
+  letter-spacing: -0.022em;
 }
 
 .section-lead {
-  max-width: 62ch;
+  max-width: var(--measure-text);
   color: var(--ink-2);
   margin-top: var(--s3);
 }
@@ -463,11 +473,11 @@ main {
 .hero h1 {
   font-family: var(--serif);
   font-weight: 400;
-  font-size: clamp(38px, 4.4vw, 58px);
-  line-height: 1.04;
-  letter-spacing: -0.025em;
+  font-size: var(--display);
+  line-height: 1.02;
+  letter-spacing: -0.032em;
   margin: var(--s4) 0 var(--s5);
-  max-width: 16ch;
+  max-width: 17ch;
 }
 
 .hero h1 em {
@@ -655,6 +665,47 @@ main {
   height: 6px;
 }
 
+/* The live mark. It breathes on a slow cycle, so a reader can tell at a
+   glance that the page is reading a chain and not a cache. It is the only
+   motion on the page that repeats. */
+.dot.live {
+  animation: live-pulse 2.4s ease-in-out infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.35;
+    transform: scale(0.78);
+  }
+}
+
+/* ---------- The entrance ---------------------------------------------------- */
+
+/* One entrance, used with a delay per element. The page settles once when it
+   opens and never moves on its own again. */
+.enter {
+  animation: settle 0.62s var(--ease-out) both;
+  animation-delay: var(--d, 0ms);
+}
+
+@keyframes settle {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 /* ---------- Buttons -------------------------------------------------------- */
 
 .button,
@@ -792,7 +843,35 @@ main {
 
 .decision {
   border-top: 1px solid var(--line);
-  padding: var(--s4) 0;
+  padding: var(--s4) 0 var(--s4) var(--s4);
+  box-shadow: inset 3px 0 0 var(--tone, transparent);
+  transition: background 0.18s var(--ease);
+}
+
+.decision:hover {
+  background: var(--panel-2);
+}
+
+/* The state of a decision is a colour on the margin rule, and the badge
+   carries the same colour, so a reader can scan the feed without reading a
+   word. The colour is never the only cue: the badge names the state too. */
+.decision[data-tone="approved"] {
+  --tone: var(--jade);
+}
+
+.decision[data-tone="denied"],
+.decision[data-tone="failed"] {
+  --tone: var(--oxblood);
+}
+
+.decision[data-tone="pending"],
+.decision[data-tone="flagged"],
+.decision[data-tone="settling"] {
+  --tone: var(--amber);
+}
+
+.decision[data-tone="expired"] {
+  --tone: var(--line-strong);
 }
 
 .decision:first-child {
@@ -1500,6 +1579,82 @@ footer {
   color: var(--muted);
 }
 
+/* ---------- The setup ------------------------------------------------------ */
+
+/* The setup is a long read. The rail names the phases and stays with the
+   reader while the commands scroll past. */
+.setup-layout {
+  display: grid;
+  grid-template-columns: 216px minmax(0, 1fr);
+  gap: var(--s8);
+  align-items: start;
+  margin-top: var(--s6);
+}
+
+.setup-rail {
+  position: sticky;
+  top: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding-right: var(--s4);
+  border-right: 1px solid var(--line);
+}
+
+.rail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.rail-link {
+  appearance: none;
+  background: none;
+  border: 0;
+  padding: 0;
+  text-align: left;
+  font-family: var(--sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--ink);
+  cursor: pointer;
+  transition: color 0.18s var(--ease);
+}
+
+.rail-link:hover {
+  color: var(--jade);
+}
+
+.rail-note {
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--muted);
+}
+
+.phase-head {
+  margin-top: var(--s8);
+  padding-top: var(--s4);
+  border-top: 1px solid var(--line);
+  scroll-margin-top: 84px;
+}
+
+.phase-head:first-child {
+  margin-top: var(--s7);
+}
+
+.phase-title {
+  font-family: var(--serif);
+  font-weight: 400;
+  font-size: var(--display-3);
+  letter-spacing: -0.018em;
+}
+
+.phase-note {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+
 /* ---------- The narrow screen --------------------------------------------- */
 
 @media (min-width: 900px) {
@@ -1552,6 +1707,28 @@ footer {
 
   .topnav {
     display: none;
+  }
+
+  .setup-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s5);
+  }
+
+  .setup-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: var(--s2) var(--s5);
+    padding-right: 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+    padding-bottom: var(--s4);
+  }
+
+  .rail-item {
+    flex-direction: row;
+    align-items: baseline;
+    gap: var(--s2);
   }
 }
 
