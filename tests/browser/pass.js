@@ -62,12 +62,18 @@ function serve() {
 async function waitForRead(page) {
   // The console stamps the time of the chain read in the top bar. It waits
   // for the chain, so the wait is the stamp, not a sleep.
+  // The options are the third argument. The chain read is a dozen calls to
+  // a public node, so the wait is generous.
+  // The stamp has to be the successful one. A failed read also changes the
+  // stamp, and a pass that counted a broken page as a good one would be
+  // worthless.
   await page.waitForFunction(
     () => {
       const node = document.getElementById('loaded');
-      return node && node.textContent && !node.textContent.includes('Reading the chain');
+      return node && node.textContent && /Read at/.test(node.textContent);
     },
-    { timeout: 45000 },
+    null,
+    { timeout: 120000 },
   );
   await page.waitForTimeout(600);
 }
@@ -78,34 +84,71 @@ async function waitForRead(page) {
   const report = {
     generated_at: new Date().toISOString(),
     browser: CHROME,
+    browser_mode: 'multi-process',
     routes: [],
     keyboard: [],
     reducedMotion: null,
     errors: [],
   };
   let browser;
+  let context;
+  let page;
   try {
-    browser = await chromium.launch({
-      executablePath: CHROME,
-      args: ['--no-sandbox', '--disable-dev-shm-usage'],
-    });
+    // A browser with one process for the renderer, for a machine that cannot
+    // spare the memory a second process needs. The mode is only used when
+    // the ordinary one cannot start a renderer at all.
+    const MODES = [
+      { name: 'multi-process', args: ['--no-sandbox', '--disable-dev-shm-usage'] },
+      {
+        name: 'single-process',
+        args: ['--no-sandbox', '--disable-dev-shm-usage', '--single-process', '--no-zygote', '--disable-gpu'],
+      },
+    ];
 
-    const context = await browser.newContext({ viewport: WIDE, deviceScaleFactor: 1 });
-    const page = await context.newPage();
-    page.on('console', (message) => {
-      if (message.type() === 'error') report.errors.push({ kind: 'console', text: message.text() });
-    });
-    page.on('pageerror', (error) => report.errors.push({ kind: 'pageerror', text: String(error) }));
-    page.on('requestfailed', (request) =>
-      report.errors.push({
-        kind: 'requestfailed',
-        text: `${request.url()} ${request.failure()?.errorText}`,
-      }),
-    );
+    const open = async (mode) => {
+      browser = await chromium.launch({ executablePath: CHROME, args: mode.args });
+      context = await browser.newContext({ viewport: WIDE, deviceScaleFactor: 1 });
+      page = await context.newPage();
+      page.on('console', (message) => {
+        if (message.type() === 'error') report.errors.push({ kind: 'console', text: message.text() });
+      });
+      page.on('pageerror', (error) => report.errors.push({ kind: 'pageerror', text: String(error) }));
+      page.on('requestfailed', (request) =>
+        report.errors.push({
+          kind: 'requestfailed',
+          text: `${request.url()} ${request.failure()?.errorText}`,
+        }),
+      );
+    };
+
+    // The first route is the probe. If the renderer cannot start, the pass
+    // relaunches the browser in the mode that fits the machine and starts
+    // again, rather than reporting a layout failure that never happened.
+    let started = false;
+    for (const mode of MODES) {
+      try {
+        await open(mode);
+        await page.goto(`http://127.0.0.1:${PORT}/index.html${ROUTES[0].hash}`, {
+          waitUntil: 'load',
+          timeout: 45000,
+        });
+        report.browser_mode = mode.name;
+        started = true;
+        break;
+      } catch (error) {
+        if (browser) await browser.close().catch(() => {});
+        browser = null;
+      }
+    }
+    if (!started) {
+      throw new Error('the browser could not load the first route in any mode');
+    }
 
     for (const route of ROUTES) {
       const entry = { name: route.name, hash: route.hash, shots: {}, facts: {} };
-      await page.goto(`http://127.0.0.1:${PORT}/index.html${route.hash}`, { waitUntil: 'load' });
+      if (!(route === ROUTES[0])) {
+        await page.goto(`http://127.0.0.1:${PORT}/index.html${route.hash}`, { waitUntil: 'load' });
+      }
       await waitForRead(page);
       await page.screenshot({ path: path.join(OUT, `${route.name}-wide.png`), fullPage: true });
       await page.screenshot({
@@ -189,11 +232,12 @@ async function waitForRead(page) {
     }
 
     // ---- The reduced motion behaviour ----------------------------------
-    const calmContext = await browser.newContext({ viewport: WIDE, reducedMotion: 'reduce' });
-    const calmPage = await calmContext.newPage();
-    await calmPage.goto(`http://127.0.0.1:${PORT}/index.html#/overview`, { waitUntil: 'load' });
-    await waitForRead(calmPage);
-    report.reducedMotion = await calmPage.evaluate(() => {
+    // The same page, with the preference set on it. A second context would
+    // be cleaner, but a browser in one process cannot hold two.
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.goto(`http://127.0.0.1:${PORT}/index.html#/overview`, { waitUntil: 'load' });
+    await waitForRead(page);
+    report.reducedMotion = await page.evaluate(() => {
       const read = (selector) => {
         const node = document.querySelector(selector);
         if (!node) return null;
@@ -206,11 +250,11 @@ async function waitForRead(page) {
       };
       return {
         entrance: read('.enter'),
-        liveMark: read('.dot.live'),
+        skeleton: read('.skeleton'),
         mediaMatches: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
       };
     });
-    await calmContext.close();
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
   } finally {
     if (browser) await browser.close();
     server.kill();
@@ -226,6 +270,7 @@ async function waitForRead(page) {
   const invisible = report.keyboard.filter((stop) => !stop.visible);
   const noRing = report.keyboard.filter((stop) => stop.outlineStyle === 'none');
   console.log(`routes            : ${report.routes.length}`);
+  console.log(`browser mode      : ${report.browser_mode}`);
   console.log(`overflow          : ${overflows.length ? overflows.map((r) => r.name).join(', ') : 'none'}`);
   console.log(`console errors    : ${report.errors.length}`);
   console.log(`keyboard stops    : ${report.keyboard.length}, without a visible focus ring: ${noRing.length}`);

@@ -36,6 +36,15 @@ reduced motion preference, and records every console error, page error and
 failed request. It exits non-zero when a route scrolls sideways, when the
 browser reports an error, or when a focus stop has no visible ring.
 
+Three rules keep the pass honest. It waits for the stamp of a successful
+chain read, not for any change in the stamp, so a page whose read failed is
+never counted as a good one. It measures the reduced motion preference on
+the page it already has, rather than in a second browser context, so the
+result does not depend on the browser being able to hold two. And when the
+machine cannot start a second renderer process, the pass relaunches the
+browser in the single process mode that fits it and says so in the report,
+rather than reporting a layout failure that never happened.
+
 ## What it found
 
 | # | Finding | Severity | Fix | Check |
@@ -98,7 +107,7 @@ the docs.
 | Console errors, page errors, failed requests | 0 |
 | Keyboard stops | 25, every one with a visible 2 pixel jade focus ring, every one on the screen |
 | Keyboard order | skip link, brand, the six sections, the deployment control, the wallet button, the six sections again in the sidebar, the request cards, the footer links, back to the top |
-| `prefers-reduced-motion: reduce` | The entrance and the live mark both fall back to 0.000001 seconds, and the media query matches |
+| `prefers-reduced-motion: reduce` | The entrance falls back to 0.000001 seconds, and the media query matches. The rule is a blanket one over every element, so it covers the loading skeleton as well, which is not on the screen after the read |
 | The setup rail | 5 phases, 5 headings, 8 steps, every step still present |
 
 The screenshots in this repository are the four that show the product: the
