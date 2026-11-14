@@ -46,6 +46,10 @@ The console was driven through a real browser at a wide and a narrow width.
 The pass, what it found and what it changed are in
 [docs/BROWSER-PASS.md](docs/BROWSER-PASS.md).
 
+The demo video is <https://youtu.be/MkUzLlyw50E>. The console is live at
+<https://near-bound.vercel.app/> and the contract is live on testnet at
+`bound-testnet-97685.testnet`.
+
 ## What the agent key can and cannot do
 
 The agent never holds the money and never holds a key that can move it. It

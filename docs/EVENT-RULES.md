@@ -53,13 +53,13 @@ The official API accepts exactly the fields below. Values are not a payload to s
 | --- | --- | --- | --- |
 | requestId | Generated once at submission time | Official submission procedure | Not created. A retry must reuse it. |
 | projectName | Certalyn | Local decision, 2026-11-13 | Ready. |
-| leadName | Builder-provided | Human-provided value | Required from builder. |
-| email | Builder-provided | Human-provided value | Required from builder. |
+| leadName | Builder-provided | Human-provided value | Open. The builder asked to fill it in themselves. |
+| email | Builder-provided | Human-provided value | Open. The builder said they would type the exact address. |
 | size | `1` | Team size is one | Ready. |
 | tracks | `security`, `agents` | Official track table | Ready. |
-| nearAddress | Builder-provided mainnet payout account | Human-provided value | Required from builder. Never create or invent it. |
+| nearAddress | Builder-provided mainnet payout account | Human-provided value | Open. The builder asked to fill it in themselves. Never create or invent it. |
 | projectUrl | `https://github.com/unifyWeb3/near-bound` | Public repository | Ready, but do not push without approval. |
-| demoUrl | Existing post in README | `https://x.com/oxunify/status/2120085871852478803` | UNKNOWN. The URL is present, but its text, tags, and attachment still need human verification. |
+| demoUrl | Existing post by the builder | `https://x.com/oxunify/status/2120085871852478803` | The builder supplied the link on 2026-11-15. The public endpoint does not answer without a token, so the text and the tags still need a human read. |
 | idea | Concise problem, product, and NEAR role | README and local remediation | Draft only. |
 | consent | `true` only after the builder agrees to the contact notice | Official contact notice | Required from builder. |
 
@@ -71,7 +71,7 @@ Official fields were VERIFIED on 2026-11-13. A payload must contain no extra fie
 | --- | --- | --- |
 | Public repository | Yes | VERIFIED by the 2026-11-12 audit: `github.com/unifyWeb3/near-bound` was public. |
 | Public before the deadline | Yes | VERIFIED by the 2026-11-12 audit. |
-| Human demo post | Unverified | The post text, required tags, and video content need a human check. |
+| Human demo post | Link supplied, text unverified | The builder gave the post on 2026-11-15 and the video `https://youtu.be/MkUzLlyw50E`, whose title frame shows the Certalyn console. The post text and the required tags still need a human read. |
 | Testnet-only project | Yes | Official Q-010. VERIFIED 2026-11-13. |
 | Working project | Yes | Rust tests and live evidence in `docs/CLAIMS.md`. The remediated contract is deployed on testnet. |
 | No mandatory integration | Yes | Official Q-011. VERIFIED 2026-11-13. |
@@ -163,7 +163,7 @@ The complete transition and guard table lives in `docs/STATE-TRANSITIONS.md`. It
 | A3 one toolchain and build config | Pass | Rust 1.99.1 and Binaryen 133 are pinned, and the build is byte identical in three clean environments. |
 | A4 suite rerun on deployed config | Pass | The full suite runs green on the source of the deployed artifact. |
 | A5 required form fields complete | Not met | Builder must supply personal fields. |
-| A6 video public and complete | Unverified | Human check required. |
+| A6 video public and complete | The video is public and shows the product | `https://youtu.be/MkUzLlyw50E`, titled "certalyn demo video", its title frame showing the Certalyn console. The earlier video, `https://youtu.be/E9JbF9TlKs4`, is titled for the old name and is superseded. |
 | A7 headline claims enforced | Pass | Every headline claim names the test that enforces it. |
 | A8 value branches tested and labelled | Pass | Every branch in the table has a named test. |
 | A9 numbers come from claims registry | Pass | `scripts/claims.py` writes the numbers and the check compares them with the chain. |
@@ -212,6 +212,6 @@ Deliberately left undone: no submission, no public post, and no X post edit. Tho
 | Question | Owner | Needed by | Status |
 | --- | --- | --- | --- |
 | Does the existing X post contain the required phrase, tags, and demo attachment? | Builder | Before submission | Open |
-| Does the existing video show the current product and a real transaction? | Builder | Before submission | Open |
+| Does the video show the current product and a real transaction? | Builder | Before submission | The title frame shows the Certalyn console. The frames themselves and the transaction still need a human watch. |
 | What are the lead name, contact email, and mainnet payout account? | Builder | Before submission | Open |
 | When may the remediated contract be deployed to testnet? | Builder | After local verification | Answered on 2026-11-14. Deployed and migrated. |
