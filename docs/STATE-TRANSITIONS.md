@@ -41,6 +41,10 @@ written for a final money decision, not for an open request.
   reports any other reservation separately.
 - A settlement callback is idempotent. A request that is no longer
   `ApprovedPending` is not settled again.
+- An approval needs a nonce above the highest nonce the agent has had
+  approved. A historical request whose nonce is below that watermark is
+  refused with `NonceReplay` and has to be closed and asked again. The nonce
+  discipline is the anti replay rule, and it holds for old requests too.
 - A settlement callback does not wait for the migration. A transfer that was
   in flight when the upgrade landed settles with the historical rules, and
   the money is placed in the historical period.

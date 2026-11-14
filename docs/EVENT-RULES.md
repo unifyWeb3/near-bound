@@ -90,7 +90,7 @@ The live deployment and remediation branch stay separate.
 | Historical deployment transaction | `Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls` |
 | Historical Wasm SHA-256 | `f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e` |
 | Historical on-chain code hash | `HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d` |
-| Remediation artifact | Built and deployed. The live code hash `GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs` is the artifact this source builds, sha256 `e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa`. |
+| Remediation artifact | Built and deployed. The live code hash and the sha256 of the bytes are in `docs/claims.json`, and they are the artifact this source builds. |
 | Comparison result | The live artifact matches the build. The build is byte identical in three clean environments, and the deployed code hash was read back from the chain. |
 
 ## Headline claim enforcement

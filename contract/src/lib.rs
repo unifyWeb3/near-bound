@@ -1802,59 +1802,38 @@ impl Bound {
             };
         }
 
-        if self.request_is_legacy(request_id) {
-            // A historical request whose money the owner has already placed
-            // settles in the period the owner named.
-            if let Some(reservation) = self.legacy_reservation_sidecar(request_id) {
-                if reservation.reservation_period_start != 0 {
-                    return self.settle_in_period(
-                        request_id,
-                        moved,
-                        evidence,
-                        failure_reason,
-                        failure_rule,
-                        reservation.reservation_period_start,
-                    );
-                }
-            }
-            return self.settle_legacy_request(
+        // The period that holds the reservation decides how the settlement is
+        // accounted. A request of the current layout always records it, and a
+        // historical request records it once the owner has named it. Either
+        // way the reservation is in the period sidecar, so the settlement
+        // releases it there and leaves the historical flat figure alone.
+        let meta_period = self
+            .request_meta_sidecar(request_id)
+            .map(|meta| meta.reserved_period_start)
+            .unwrap_or(0);
+        if meta_period != 0 {
+            return self.settle_in_period(
                 request_id,
                 moved,
                 evidence,
                 failure_reason,
                 failure_rule,
+                meta_period,
             );
         }
-
-        let period = self
-            .request_meta_sidecar(request_id)
-            .map(|meta| meta.reserved_period_start)
-            .unwrap_or(0);
-        if period == 0 {
-            // A request of the current layout always records the period its
-            // reservation holds. A missing one is a broken state, not a
-            // reason to guess.
-            env::panic_str("the reservation period of this request is missing");
+        if let Some(reservation) = self.legacy_reservation_sidecar(request_id) {
+            if reservation.reservation_period_start != 0 {
+                return self.settle_in_period(
+                    request_id,
+                    moved,
+                    evidence,
+                    failure_reason,
+                    failure_rule,
+                    reservation.reservation_period_start,
+                );
+            }
         }
-        self.settle_in_period(
-            request_id,
-            moved,
-            evidence,
-            failure_reason,
-            failure_rule,
-            period,
-        )
-    }
-
-    /// Whether a request comes from the historical layout.
-    ///
-    /// A request with no metadata at all was written before the upgrade, so
-    /// it is a historical request too.
-    fn request_is_legacy(&self, request_id: u64) -> bool {
-        match self.request_meta_sidecar(request_id) {
-            Some(meta) => meta.legacy,
-            None => true,
-        }
+        self.settle_legacy_request(request_id, moved, evidence, failure_reason, failure_rule)
     }
 
     /// Settle a request in the period its reservation holds.

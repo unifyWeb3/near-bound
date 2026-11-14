@@ -6,26 +6,26 @@
     "request_spend"
   ],
   "agent_key_receiver": "bound-testnet-97685.testnet",
-  "code_hash": "GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs",
-  "code_sha256": "e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa",
-  "contract_balance_yocto": "16969918297025314800000000",
+  "code_hash": "2y4qWBRoomLCA3prgdUrneAhUP4ub6mLPLbtkmmMgApW",
+  "code_sha256": "1d388cc6c47a8e3dc566c56dc37541f35e7442fe2642b0961be7d7a4d477635f",
+  "contract_balance_yocto": "16967858879277441700000000",
   "contract_key": "ed25519:ERnZ8BLvFusfCPReopLBX3fcakY9DPCauYcW3pfskV2j",
-  "contract_storage_bytes": 250984,
-  "generated_at": "2026-11-15 03:02 UTC",
-  "historical_receipt_count": 31,
+  "contract_storage_bytes": 251521,
+  "generated_at": "2026-11-15 06:27 UTC",
+  "historical_receipt_count": 32,
   "policy": {
     "agent_id": "bound-agent.testnet",
     "budget": 5000000000000000000000000,
     "last_nonce": 1794708845,
     "max_single_spend": 1000000000000000000000000,
     "period_seconds": 3600,
-    "period_start": 1794708849,
+    "period_start": 1794723931,
     "rate_count": 0,
     "rate_limit": 5,
-    "remaining": 4900000000000000000000000,
+    "remaining": 5000000000000000000000000,
     "request_count": 15,
     "revoked": false,
-    "spent": 100000000000000000000000,
+    "spent": 0,
     "vendors": [
       "bound-vendor.testnet"
     ]
@@ -34,14 +34,14 @@
   "policy_max_single_yocto": 1000000000000000000000000,
   "policy_period_seconds": 3600,
   "policy_rate_limit": 5,
-  "policy_remaining_yocto": 4900000000000000000000000,
-  "policy_spent_yocto": 100000000000000000000000,
+  "policy_remaining_yocto": 5000000000000000000000000,
+  "policy_spent_yocto": 0,
   "policy_vendors": [
     "bound-vendor.testnet"
   ],
   "receipt_outcomes": {
     "Approved": 9,
-    "Denied": 21,
+    "Denied": 22,
     "Failed": 1
   },
   "receipt_sha256": {
@@ -58,9 +58,9 @@
     "8": "eb31e9cadc82c69b33654cebf3e05b4df8c6adf280ff6fa979bcc8a0dd858d70",
     "9": "5b31e69fd65c6ad2a591e1e4c61e5102b7c64b187f53d0c9d733bdde605e8851"
   },
-  "source_test_functions_contract": 61,
+  "source_test_functions_contract": 62,
   "source_test_functions_policy": 26,
-  "source_test_snapshot_sha256": "4283b5deb1991ff8da89354e2108d10804aaa00d757745b81f6ba5550977a058",
+  "source_test_snapshot_sha256": "c0371241491dbb80c55b72072ed7b035acb6a22e69aab7ce804afdd3f751580a",
   "transactions": [
     {
       "check": {
@@ -230,6 +230,25 @@
       "hash": "6FdubrFpDKXPbaN5mPMiD51LfM11kuP9skDmhNEPgx7R",
       "result": "receipt 30, Approved, the receipt reports the settled and the reserved money apart",
       "what": "the owner approves it and the transfer settles"
+    },
+    {
+      "check": {
+        "account": "contract",
+        "code_hash": true,
+        "kind": "account"
+      },
+      "hash": "EyX8weDu2yi5o5vzwaDHhA2JBkGzEE5ffNSPAkjaERxx",
+      "result": "deployed without an init call, the migration stayed complete, the 31 receipts and the 16 request ids were still there",
+      "what": "the settlement fix is deployed in place, the migrated state carried over"
+    },
+    {
+      "check": {
+        "id": 31,
+        "kind": "receipt"
+      },
+      "hash": "7Y2CosYUCokfuxp3WZDCVjzKqU828QFHWqv5CwcnKCmR",
+      "result": "receipt 31, Denied NonceReplay, the nonce of the old request is below every nonce the agent had approved",
+      "what": "the owner approves a historical request and the nonce discipline refuses it"
     }
   ],
   "wasm_commit": "912b3da191ed44c3701c252eb870be0543622901"

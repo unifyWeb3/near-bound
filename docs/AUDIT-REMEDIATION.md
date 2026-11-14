@@ -6,11 +6,10 @@ it, and the status.
 
 The remediated contract is the artifact on the chain. It replaced the earlier
 one on `bound-testnet-97685.testnet` in place, without an init call, so every
-receipt, request and policy carried over. The deployed code hash is
-`GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs` and its sha256 is
-`e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa`, the
-same bytes as [docs/wasm-lock.json](wasm-lock.json). The earlier artifact
-(code hash `HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d`, sha256
+receipt, request and policy carried over. The live code hash and the sha256
+of the bytes are in [docs/claims.json](claims.json), and they are the same
+bytes as [docs/wasm-lock.json](wasm-lock.json). The earlier artifact (code
+hash `HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d`, sha256
 `f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e`) wrote
 the receipts that are still on the chain, and those receipts are kept byte for
 byte.

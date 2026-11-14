@@ -148,7 +148,7 @@ repository.
 <!-- evidence:start -->
 | What | Transaction | Result | Branch |
 | --- | --- | --- | --- |
-| the contract is upgraded in place, the state carried over | [Bb64yQtpRcu1](https://explorer.testnet.near.org/transactions/Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls) | deployed, code hash GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs, sha256 e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa | testnet only |
+| the contract is upgraded in place, the state carried over | [Bb64yQtpRcu1](https://explorer.testnet.near.org/transactions/Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls) | deployed, code hash 2y4qWBRoomLCA3prgdUrneAhUP4ub6mLPLbtkmmMgApW, sha256 1d388cc6c47a8e3dc566c56dc37541f35e7442fe2642b0961be7d7a4d477635f | testnet only |
 | the agent is given NEAR for gas | [HnHYC226AEEa](https://explorer.testnet.near.org/transactions/HnHYC226AEEaM4L8kuekL86jTp1ur8bnfQEATCpcfsPG) | the agent account can make a call | testnet only |
 | the first of two requests for 1 NEAR | [EEHzgVkt4HXT](https://explorer.testnet.near.org/transactions/EEHzgVkt4HXTHCriHq335fpP97Kp6ZQ9M2EmSXfHKjqS) | request 10 | testnet only |
 | the second of two requests for 1 NEAR | [GebCsWA4K5S2](https://explorer.testnet.near.org/transactions/GebCsWA4K5S2GHfM1QzmymoQ2p8d1qp6hBsKAcfMsmDb) | request 11 | testnet only |
@@ -163,10 +163,12 @@ repository.
 | the agent asks to pay the vendor that does not exist | [Cc6rmKhH5gAa](https://explorer.testnet.near.org/transactions/Cc6rmKhH5gAa89cqARW9zhy2jiFbEGrDnZtm9RmKA9yf) | request 9 | testnet only |
 | the owner approves it | [4JTiK48kgmGw](https://explorer.testnet.near.org/transactions/4JTiK48kgmGwLJxjjtdDLEZn7gZhvGVKpqJgT7sXvQRm) | receipt 18, Failed TransferFailed, the budget came back | testnet only |
 | the owner removes the vendor that does not exist | [3RgJLNZ5rF4z](https://explorer.testnet.near.org/transactions/3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S) | the allowlist is back to one vendor | testnet only |
-| the remediated contract is deployed in place, the state carried over | [74PGYcLQ3drC](https://explorer.testnet.near.org/transactions/74PGYcLQ3drCFUzFAju48nfECM7CddWpRVTiX7Xrikfs) | deployed, code hash GHpAjEa4j9KQD6jEXU18ku4TR9rAk3Efx9neyFzTbThs, sha256 e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa | testnet only |
+| the remediated contract is deployed in place, the state carried over | [74PGYcLQ3drC](https://explorer.testnet.near.org/transactions/74PGYcLQ3drCFUzFAju48nfECM7CddWpRVTiX7Xrikfs) | deployed, code hash 2y4qWBRoomLCA3prgdUrneAhUP4ub6mLPLbtkmmMgApW, sha256 1d388cc6c47a8e3dc566c56dc37541f35e7442fe2642b0961be7d7a4d477635f | testnet only |
 | the legacy state is migrated in place | no transaction, the state is the evidence | the migration is complete, the request index holds 15 ids including the request the historical index had lost, and no historical record waits for the owner | testnet only |
 | the agent asks for 0.1 NEAR with the remediated contract | [4FoF36c7kaoa](https://explorer.testnet.near.org/transactions/4FoF36c7kaoaTRFmjJpd5HSP8iP4rVG7tX6WWN6v5EyK) | request 15, the nonce is above every nonce the historical contract accepted | testnet only |
 | the owner approves it and the transfer settles | [6FdubrFpDKXP](https://explorer.testnet.near.org/transactions/6FdubrFpDKXPbaN5mPMiD51LfM11kuP9skDmhNEPgx7R) | receipt 30, Approved, the receipt reports the settled and the reserved money apart | testnet only |
+| the settlement fix is deployed in place, the migrated state carried over | [EyX8weDu2yi5](https://explorer.testnet.near.org/transactions/EyX8weDu2yi5o5vzwaDHhA2JBkGzEE5ffNSPAkjaERxx) | deployed, code hash 2y4qWBRoomLCA3prgdUrneAhUP4ub6mLPLbtkmmMgApW, sha256 1d388cc6c47a8e3dc566c56dc37541f35e7442fe2642b0961be7d7a4d477635f | testnet only |
+| the owner approves a historical request and the nonce discipline refuses it | [7Y2CosYUCokf](https://explorer.testnet.near.org/transactions/7Y2CosYUCokfuxp3WZDCVjzKqU828QFHWqv5CwcnKCmR) | receipt 31, Denied NonceReplay, the nonce of the old request is below every nonce the agent had approved | testnet only |
 
 Every row can be checked with the public testnet RPC, with no key and no
 explorer. Nearblocks answers a script with a 403, and the public RPC has
@@ -231,6 +233,12 @@ curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"
 # the owner approves it and the transfer settles
 curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMzB9","finality":"final"}}'
 
+# the settlement fix is deployed in place, the migrated state carried over
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","account_id":"bound-testnet-97685.testnet","finality":"final"}}'
+
+# the owner approves a historical request and the nonce discipline refuses it
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMzF9","finality":"final"}}'
+
 ```
 
 Every one of these is on testnet. Nothing here has been run on mainnet, and
@@ -259,6 +267,7 @@ bash scripts/build-wasm.sh
 | What the contract buys | Nothing. It moves NEAR to the counterparty account with a plain transfer under the policy |
 | Counterparty signals | The blocklist and the allowlist the owner sets. No risk feed, no account age, no code change watch |
 | The browser writes | Approve and refuse, signed by the reader's own wallet |
+| A historical request with an old nonce | It cannot be approved, because a nonce has to be above every nonce the agent had approved. The owner closes it and the agent asks again |
 | Audit | No independent security audit. Internal remediation and regression tests only. Testnet only. No real money has moved |
 
 A receipt proves the contract decided and the transfer settled. It does not

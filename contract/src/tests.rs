@@ -1761,6 +1761,53 @@ fn the_migration_finishes_on_the_shape_of_the_live_contract() {
     assert!(contract.approve_request(waiting).approved);
 }
 
+/// A historical request that the owner approves after the migration settles
+/// once.
+///
+/// The approval reserves the amount in the period sidecar, and the settlement
+/// releases it there. The historical flat figure is not touched, because it
+/// was never part of the new accounting.
+#[test]
+fn a_historical_request_approved_after_the_migration_settles_once() {
+    let mut contract = setup();
+    let request_id = seed_legacy_request_with(
+        &mut contract,
+        1,
+        100,
+        RequestStatus::Pending,
+        NOW / 1_000_000_000,
+    );
+
+    call_as(account(OWNER));
+    contract.migrate();
+    assert_eq!(
+        contract.schema_marker_sidecar().unwrap().version,
+        SCHEMA_VERSION
+    );
+
+    // The owner approves the historical request.
+    call_as(account(OWNER));
+    assert!(contract.approve_request(request_id).approved);
+    let period = contract.policy(&account(AGENT)).period_start;
+    let reserved = contract
+        .period_totals_sidecar(&account(AGENT), period)
+        .unwrap();
+    assert_eq!(reserved.reserved, 100, "the amount is reserved");
+
+    // The transfer settles.
+    contract.on_transfer(request_id, Ok(()));
+    let totals = contract
+        .period_totals_sidecar(&account(AGENT), period)
+        .unwrap();
+    assert_eq!(totals.settled, 100, "the amount is settled money");
+    assert_eq!(totals.reserved, 0, "the reservation is released");
+    assert_eq!(totals.used(), 100, "the amount is counted once");
+
+    let receipt = contract.get_receipt(0);
+    assert_eq!(receipt.outcome, Outcome::Approved);
+    assert_eq!(receipt.spent_after, 100);
+}
+
 /// The stored enum discriminants and the sidecar byte layouts are fixed.
 #[test]
 fn the_frozen_discriminants_and_sidecar_layouts_are_stable() {

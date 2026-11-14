@@ -168,6 +168,25 @@
     "kind": "receipt",
     "id": 30
    }
+  },
+  {
+   "what": "the settlement fix is deployed in place, the migrated state carried over",
+   "hash": "EyX8weDu2yi5o5vzwaDHhA2JBkGzEE5ffNSPAkjaERxx",
+   "result": "deployed without an init call, the migration stayed complete, the 31 receipts and the 16 request ids were still there",
+   "check": {
+    "kind": "account",
+    "account": "contract",
+    "code_hash": true
+   }
+  },
+  {
+   "what": "the owner approves a historical request and the nonce discipline refuses it",
+   "hash": "7Y2CosYUCokfuxp3WZDCVjzKqU828QFHWqv5CwcnKCmR",
+   "result": "receipt 31, Denied NonceReplay, the nonce of the old request is below every nonce the agent had approved",
+   "check": {
+    "kind": "receipt",
+    "id": 31
+   }
   }
  ]
 }
