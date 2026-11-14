@@ -15,9 +15,12 @@ so an agent that cannot change the rules cannot get around them, and a reader
 can check what happened without trusting the console.
 
 - Repository: `unifyWeb3/near-bound`
-- Live console: <https://near-bound.vercel.app/>
-- Live contract on testnet: `bound-testnet-97685.testnet`
+- Historical console: <https://near-bound.vercel.app/>
+- Historical contract on testnet: `bound-testnet-97685.testnet`
 - Licence: MIT
+
+The remediated contract in this branch is local and undeployed. Its Wasm hash
+is tracked separately from the historical deployment.
 
 ## Try it in five minutes
 
@@ -47,11 +50,14 @@ protocol before the contract runs:
 | no deposit allowed | the key cannot attach NEAR to a call |
 | a gas allowance | the key cannot afford a call the owner did not budget for |
 
-`demo/protocol_arm.sh` runs those four refusals against the live deployment
-and prints the protocol's own error for each one. The output of the recorded
-run is in `demo/protocol_arm.out`.
+`demo/protocol_arm.sh` runs those four refusals against the historical live
+deployment and prints the protocol's own error for each one. The output of the
+recorded run is in `demo/protocol_arm.out`.
 
 ## The contract interface
+
+This table describes the remediated source in this branch. The historical
+deployment exposes an older subset of it.
 
 Arguments are JSON objects, the same shape the NEAR CLI sends with
 `json-args`. The console signs the same bytes.
@@ -59,10 +65,10 @@ Arguments are JSON objects, the same shape the NEAR CLI sends with
 | Method | Who may call it | Arguments | What it does |
 | --- | --- | --- | --- |
 | `request_spend` | the agent, for itself | `agent_id, vendor, amount, nonce, memo` | runs the hard checks, then waits for the owner |
-| `approve_request` | owner or runner | `request_id` | reserves the budget and moves the money |
+| `approve_request` | owner or runner for `Pending`; owner for `NeedsApproval` | `request_id` | reserves the budget and moves the money |
 | `owner_approve_request` | owner | `request_id` | approves a request that was flagged for a human |
 | `flag_request` | owner or runner | `request_id, reasons` | sends a request to the owner |
-| `reject_request` | owner or runner | `request_id, reason` | refuses a request and writes the receipt |
+| `reject_request` | owner or runner for `Pending`; owner for `NeedsApproval` | `request_id, reason` | refuses a request and writes the receipt |
 | `owner_reject_request` | owner | `request_id, reason` | refuses a flagged request |
 | `expire_request` | owner or runner | `request_id, reason` | closes an open request, nothing moves |
 | `reconcile_request` | owner | `request_id, moved` | settles a request whose callback never arrived |
@@ -115,14 +121,18 @@ the money moved when it did not.
 | `Denied` | `Denied`, with the rule and the evidence | untouched |
 | `Expired` | `Expired` | untouched |
 
-A failed payment gives the budget back and gives the rate slot back. The
-settlement accounting is constant time, so the callback cannot run out of gas
-as the ledger grows. If a callback still never arrives, the owner closes the
-request with `reconcile_request`, and the reservation is settled by hand.
+A failed payment gives the budget back and refunds the rate slot only if the
+failure settles in the window that reserved it. The settlement receipt reports
+settled money and reserved money separately. The settlement accounting is
+constant time, so the callback cannot run out of gas as the ledger grows. If a
+callback still never arrives, the owner closes the request with
+`reconcile_request`, and the reservation is settled by hand.
 
 ## Evidence
 
-Every number in this repository comes from a script that reads the chain.
+Every chain-derived figure in this repository comes from a script that reads
+the historical deployment. Source constants and test counts are labelled as
+such.
 
 ```bash
 python3 scripts/claims.py          # write docs/CLAIMS.md and docs/claims.json
@@ -147,30 +157,35 @@ bash scripts/build-wasm.sh
 
 | Claim | State |
 | --- | --- |
-| The contract, the policy engine and the receipts | Real, on testnet, live |
-| The refusal reasons on the receipts | Real, written by the contract |
-| The console figures | Read live from the public testnet RPC when the page opens |
+| The historical contract and its receipts | Real, on testnet, and still live |
+| The remediated contract source | Local and tested, but not deployed |
+| The refusal reasons on the historical receipts | Real, written by the historical contract |
+| The console figures | Read from the selected deployment when the page opens |
 | The console on a failed read | The last good read, marked stale. Never a guessed number |
 | What the contract buys | Nothing. It moves NEAR to the counterparty account with a plain transfer under the policy |
 | Counterparty signals | The blocklist and the allowlist the owner sets. No risk feed, no account age, no code change watch |
-| The browser writes | Approve, refuse, expire and reconcile, signed by the reader's own wallet |
-| Audit | Not audited. Testnet only. No real money has moved |
+| The browser writes | Approve and refuse, signed by the reader's own wallet |
+| Audit | No independent security audit. Internal remediation and regression tests only. Testnet only. No real money has moved |
 
 A receipt proves the contract decided and the transfer settled. It does not
 prove a service was delivered.
 
 ## What this branch changed
 
-The audit of the previous revision found two broken flows and one defect that
-could strand money. All three are fixed here, with tests.
+The audit of the previous revision found broken approval and console-write
+flows, settlement and nonce defects, and state-growth risks. They are fixed
+here, with tests.
 
 | Finding | Fix | Test |
 | --- | --- | --- |
 | A flagged request could never be approved, because the owner path delegated to a method that only accepts `Pending` | `approve_request` accepts an open request, and a flagged one needs the owner | `the_owner_can_approve_a_flagged_request`, `the_runner_cannot_approve_a_flagged_request` |
 | The console sent Borsh arguments to a contract that reads JSON, so no browser write could succeed | The arguments are a JSON object, signed as bytes | `wallet arguments are JSON argument objects, not Borsh arrays` |
 | The settlement callback walked the whole request history, so it could run out of gas and leave the budget reserved with no way out | The reservation is held in a sidecar keyed by agent and period, and the owner can reconcile a request that never settled | `the_settlement_is_constant_time_with_a_long_history`, `the_owner_can_reconcile_a_request_that_never_settled` |
-| A failed payment kept its rate slot | The slot comes back with the budget | `a_failed_payment_gives_the_rate_slot_back` |
-| A nonce could be replayed while the first request was still undecided | The accepted nonce is tracked per agent | `an_accepted_nonce_cannot_be_replayed` |
+| A failed payment kept its rate slot | The slot comes back only in the approval window that reserved it | `a_failed_payment_gives_the_rate_slot_back`, `an_old_rate_window_failure_does_not_refund_a_new_window` |
+| A nonce could be replayed while the first request was still undecided | Accepted and approved nonce watermarks are tracked separately per agent | `an_accepted_nonce_cannot_be_replayed`, `approvals_use_a_separate_monotonic_nonce_watermark` |
+| Legacy state could be used without building the new indexes | A fresh state writes a schema marker; legacy state requires an owner-only, bounded, resumable migration | `the_migration_marks_the_schema_and_keeps_the_requests`, `the_legacy_migration_is_batched_and_resumable` |
+| Receipt history and per-agent pages could grow without a bound | The contract retains 10,000 receipts, keeps a 256-entry request index, and pages through versioned receipt indexes | `the_legacy_migration_enforces_the_receipt_retention_limit`, `the_request_index_is_bounded_to_256_ids` |
+| Settlement totals could count a reservation as money moved | Settled and reserved totals are separate, and settlement records the exact reservation period | `a_failed_reservation_is_reported_separately_from_settled_money`, `payments_that_settle_out_of_order_leave_the_right_figures` |
 | The console read the whole ledger of every agent to show one agent | The contract reads one agent's receipts in pages | `getLedger on a paged contract uses the agent page view` |
 | The receipt cache could serve receipts from a state that no longer exists | Cached receipts the chain cannot have any more are dropped | `the cache drops receipts the chain cannot have` |
 | The big number parser could corrupt a receipt whose memo held a long number | Numbers outside strings are quoted, strings are left alone | `parseBigJson does not touch a long number inside a string` |
@@ -186,9 +201,9 @@ They differ, because this source has not been deployed.
 ## Run it locally
 
 ```bash
-make test          # the policy suite and the contract suite
+make test          # Rust, fake-NEAR, dependency-gate and console tests
 make test-shell    # the demo scripts against a fake near CLI
-cd web && node --test test/*.test.js   # the console unit tests
+cd web && npm test # the console unit tests
 make fmt           # rustfmt
 make clippy        # clippy with warnings denied
 make verify-local  # build the wasm twice and compare the bytes
@@ -216,10 +231,12 @@ docs/         the generated claims, the decisions, the audit table
 ## Limits
 
 - Testnet only. No mainnet deployment, no real money has moved.
-- Not audited.
-- The receipts are never pruned. The contract pays for the storage.
-- The contract cannot be upgraded in place. A fix needs a redeploy that keeps
-  the state. `migrate` indexes the history, it does not move it.
+- No independent security audit.
+- The remediated source retains at most 10,000 receipts. Older receipts are
+  pruned, so the chain is not a permanent archive.
+- A contract change still needs a redeploy. The remediated source preserves
+  the frozen state layout and uses versioned sidecars; `migrate` builds those
+  indexes in bounded batches before request operations resume.
 - The counterparty signals are local policy inputs, not live risk feeds.
 - The agent's gas comes from its account. The key's allowance caps the gas it
   can burn, and adding NEAR to the agent account does not raise the

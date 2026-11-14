@@ -11,14 +11,15 @@
   "contract_balance_yocto": "17076158420442356500000000",
   "contract_key": "ed25519:ERnZ8BLvFusfCPReopLBX3fcakY9DPCauYcW3pfskV2j",
   "contract_storage_bytes": 193927,
-  "generated_at": "2026-11-11 13:24 UTC",
+  "generated_at": "2026-11-14 14:56 UTC",
+  "historical_receipt_count": 30,
   "policy": {
     "agent_id": "bound-agent.testnet",
     "budget": 5000000000000000000000000,
     "last_nonce": 15,
     "max_single_spend": 1000000000000000000000000,
     "period_seconds": 3600,
-    "period_start": 1794403451,
+    "period_start": 1794668157,
     "rate_count": 1,
     "rate_limit": 5,
     "remaining": 5000000000000000000000000,
@@ -38,7 +39,6 @@
   "policy_vendors": [
     "bound-vendor.testnet"
   ],
-  "receipt_count": 30,
   "receipt_outcomes": {
     "Approved": 8,
     "Denied": 21,
@@ -58,8 +58,9 @@
     "8": "eb31e9cadc82c69b33654cebf3e05b4df8c6adf280ff6fa979bcc8a0dd858d70",
     "9": "5b31e69fd65c6ad2a591e1e4c61e5102b7c64b187f53d0c9d733bdde605e8851"
   },
-  "test_functions_contract": 13,
-  "test_functions_policy": 17,
+  "source_test_functions_contract": 53,
+  "source_test_functions_policy": 26,
+  "source_test_snapshot_sha256": "717e7810dec8d1899cd411f5d3f16827762ca916abd0f264ba2af5c04583aac1",
   "transactions": [
     {
       "check": {

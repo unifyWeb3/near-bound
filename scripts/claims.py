@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Generate docs/CLAIMS.md and check the live deployment against it.
+"""Generate docs/CLAIMS.md and check the historical deployment against it.
 
-Every number in the README comes from this script. Run it after the last
+Every chain-derived figure in the README comes from this script. Source
+constants and test counts are labelled separately. Run it after the last
 on-chain transaction and commit what it writes.
 
     python3 scripts/claims.py            write docs/CLAIMS.md and docs/claims.json
@@ -20,6 +21,8 @@ import os
 import re
 import subprocess
 import sys
+import time
+import urllib.error
 import urllib.request
 from datetime import datetime, timezone
 
@@ -59,8 +62,16 @@ def call(method, params):
     request = urllib.request.Request(
         RPC, data=body, headers={"Content-Type": "application/json"}
     )
-    with urllib.request.urlopen(request, timeout=30) as response:
-        return json.loads(response.read())
+    last_error = None
+    for attempt in range(4):
+        try:
+            with urllib.request.urlopen(request, timeout=30) as response:
+                return json.loads(response.read())
+        except (urllib.error.URLError, ConnectionResetError, TimeoutError) as error:
+            last_error = error
+            if attempt < 3:
+                time.sleep(0.5 * (attempt + 1))
+    raise RuntimeError(f"RPC request failed after four attempts: {last_error}") from last_error
 
 
 def view(account, method, args):
@@ -96,6 +107,18 @@ def receipts():
 def test_count(path):
     with open(os.path.join(ROOT, path), "r", encoding="utf-8") as handle:
         return len(re.findall(r"^\s*#\[test\]", handle.read(), re.MULTILINE))
+
+
+def source_test_snapshot_sha256():
+    """Identify the source files that define the recorded test counts."""
+    digest = hashlib.sha256()
+    for path in ("policy/src/lib.rs", "contract/src/tests.rs"):
+        with open(os.path.join(ROOT, path), "rb") as handle:
+            digest.update(path.encode())
+            digest.update(b"\0")
+            digest.update(handle.read())
+            digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def near(value):
@@ -201,7 +224,7 @@ def collect():
         "agent_key_allowance_yocto": function_call.get("allowance"),
         "agent_key_methods": function_call.get("method_names"),
         "agent_key_receiver": function_call.get("receiver_id"),
-        "receipt_count": len(rows),
+        "historical_receipt_count": len(rows),
         "receipt_outcomes": outcomes,
         "policy": policy,
         "policy_budget_yocto": policy["budget"],
@@ -211,8 +234,9 @@ def collect():
         "policy_vendors": policy["vendors"],
         "policy_spent_yocto": policy["spent"],
         "policy_remaining_yocto": policy["remaining"],
-        "test_functions_policy": test_count("policy/src/lib.rs"),
-        "test_functions_contract": test_count("contract/src/tests.rs"),
+        "source_test_functions_policy": test_count("policy/src/lib.rs"),
+        "source_test_functions_contract": test_count("contract/src/tests.rs"),
+        "source_test_snapshot_sha256": source_test_snapshot_sha256(),
         "receipt_sha256": {str(row["receipt_id"]): sha(json.dumps(row, sort_keys=True)) for row in rows[:12]},
         "transactions": transactions,
     }
@@ -230,7 +254,7 @@ CLAIM_ROWS = [
     ("agent key allowance", "agent_key_allowance_yocto", "the chain", "near contract view-access-key-list"),
     ("agent key methods", "agent_key_methods", "the chain", "near contract view-access-key-list"),
     ("agent key receiver", "agent_key_receiver", "the chain", "near contract view-access-key-list"),
-    ("receipts on chain", "receipt_count", "the chain", "near contract call-function get_receipt_count"),
+    ("receipts on the historical deployment", "historical_receipt_count", "the chain", "near contract call-function get_receipt_count"),
     ("approved receipts", "receipt_outcomes.Approved", "the chain", "near contract call-function get_receipt"),
     ("denied receipts", "receipt_outcomes.Denied", "the chain", "near contract call-function get_receipt"),
     ("failed receipts", "receipt_outcomes.Failed", "the chain", "near contract call-function get_receipt"),
@@ -241,8 +265,9 @@ CLAIM_ROWS = [
     ("policy vendors", "policy_vendors", "the chain", "near contract call-function get_policy"),
     ("policy spent", "policy_spent_yocto", "the chain", "near contract call-function get_policy"),
     ("policy remaining", "policy_remaining_yocto", "the chain", "near contract call-function get_policy"),
-    ("policy test functions", "test_functions_policy", "policy/src/lib.rs", "cd policy && cargo test --locked"),
-    ("contract test functions", "test_functions_contract", "contract/src/tests.rs", "cd contract && cargo test --locked"),
+    ("policy test functions", "source_test_functions_policy", "policy/src/lib.rs", "cd policy && cargo test --locked"),
+    ("contract test functions", "source_test_functions_contract", "contract/src/tests.rs", "cd contract && cargo test --locked"),
+    ("source test snapshot sha256", "source_test_snapshot_sha256", "policy/src/lib.rs and contract/src/tests.rs", "python3 scripts/claims.py --check"),
 ]
 
 VOLATILE = {
@@ -251,7 +276,7 @@ VOLATILE = {
     "policy_remaining_yocto",
     "agent_balance_yocto",
     "agent_key_allowance_yocto",
-    "receipt_count",
+    "historical_receipt_count",
     "generated_at",
     "transactions",
 }
@@ -294,7 +319,7 @@ def render(data):
     lines = []
     lines.append("# Claims")
     lines.append("")
-    lines.append("Generated by `python3 scripts/claims.py`. Every number in the README comes from here.")
+    lines.append("Generated by `python3 scripts/claims.py`. Every chain-derived figure in the README comes from here.")
     lines.append(f"Read from the chain on {data['generated_at']}.")
     lines.append("")
     lines.append("| Claim | Value | Source of truth | How to check it |")
@@ -311,10 +336,10 @@ def render(data):
     lines.append("")
     lines.append("## The first twelve receipts")
     lines.append("")
-    lines.append("These are the first twelve receipts. They were written before the contract")
-    lines.append("was upgraded, and the current build kept every one of them: the sha256")
-    lines.append("below is recomputed from the chain, and")
+    lines.append("These are the first twelve receipts retained by the historical deployment.")
+    lines.append("Their sha256 values are recomputed from that chain, and")
     lines.append("`python3 scripts/claims.py --check` fails if one of them changed.")
+    lines.append("The remediated source is undeployed and retains at most 10,000 receipts.")
     lines.append("")
     lines.append("| Receipt | sha256 |")
     lines.append("| --- | --- |")
@@ -333,9 +358,9 @@ def render(data):
     lines.append("")
     lines.append("## Where the numbers come from")
     lines.append("")
-    lines.append("The chain is the source of truth for every figure. The test counts come from the")
-    lines.append("source, and `cargo test` says whether they pass. The transactions come from the")
-    lines.append("demo runs recorded in `demo/transactions.json`.")
+    lines.append("The historical chain is the source of truth for chain-derived figures. The test")
+    lines.append("counts come from the source, and `cargo test` says whether they pass. The")
+    lines.append("transactions come from the demo runs recorded in `demo/transactions.json`.")
     lines.append("")
     return "\n".join(lines)
 
@@ -436,6 +461,16 @@ def main():
                     if data["receipt_sha256"].get(receipt_id) != digest:
                         problems.append(f"receipt {receipt_id} does not match the recorded sha256")
                 continue
+            if key in {
+                "source_test_functions_policy",
+                "source_test_functions_contract",
+                "source_test_snapshot_sha256",
+            }:
+                if data.get(key) != value:
+                    problems.append(
+                        f"{key}: recorded {value!r}, source now has {data.get(key)!r}"
+                    )
+                continue
             if key == "policy":
                 rolling = []
                 for field in sorted(ROLLING_POLICY_FIELDS):
@@ -457,7 +492,15 @@ def main():
             for problem in problems:
                 print("  " + problem)
             return 1
-        print(f"the live deployment matches docs/claims.json, {data['receipt_count']} receipts, code {data['code_hash']}")
+        source_tests = (
+            f"source tests {data['source_test_functions_policy']} policy, "
+            f"{data['source_test_functions_contract']} contract"
+        )
+        print(
+            f"the live deployment matches docs/claims.json, "
+            f"{data['historical_receipt_count']} receipts, code {data['code_hash']}; "
+            f"{source_tests}"
+        )
         return 0
 
     if mode == "--record":

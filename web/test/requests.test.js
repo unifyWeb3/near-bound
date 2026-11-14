@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeDocument } from './dom-shim.js';
 import { requestTiming, renderRequests } from '../views/requests.js';
+import { renderRequest } from '../views/receipt.js';
 
 const document = makeDocument();
 globalThis.document = document;
@@ -32,6 +33,7 @@ test('requestTiming: a future expiry shows a countdown', () => {
 
 document.register('requests-view', document.createElement('div'));
 document.register('requests-count', document.createElement('div'));
+document.register('receipt-view', document.createElement('div'));
 
 test('renderRequests shows the open count and oldest age', () => {
   const state = {
@@ -55,6 +57,33 @@ test('renderRequests shows the open count and oldest age', () => {
   );
 });
 
+test('renderRequests shows the available open count when the page is incomplete', () => {
+  const state = {
+    requests: {
+      items: [{
+        request_id: 0,
+        status: 'Pending',
+        agent_id: 'bound-agent.testnet',
+        vendor: 'vendor.testnet',
+        amount: '1',
+        nonce: 1,
+        created_at: String(now - 500),
+      }],
+      openCount: 51,
+      errors: 0,
+      failedIds: [],
+      complete: false,
+      fallback: false,
+    },
+    wallet: { accountId: null },
+    actions: {},
+    deployment: { agent: 'bound-agent.testnet' },
+  };
+  renderRequests(state, () => {});
+  assert.ok(document.getElementById('requests-count').textContent.startsWith('51 open'));
+  assert.ok(document.getElementById('requests-view').textContent.includes('cut off'));
+});
+
 test('renderRequests lists exact failed request ids', () => {
   const state = {
     requests: {
@@ -73,4 +102,27 @@ test('renderRequests lists exact failed request ids', () => {
   renderRequests(state, () => {});
   assert.ok(document.getElementById('requests-view').textContent.includes('request #3'));
   assert.ok(document.getElementById('requests-view').textContent.includes('not a complete queue'));
+});
+
+test('renderRequest reads request id zero from state.requests.items', async () => {
+  const state = {
+    requests: {
+      items: [{
+        request_id: 0,
+        status: 'Pending',
+        agent_id: 'bound-agent.testnet',
+        vendor: 'vendor.testnet',
+        nonce: 1,
+        memo: 'the first request',
+      }],
+    },
+    deployment: { contract: 'contract.testnet', agent: 'bound-agent.testnet' },
+  };
+
+  await renderRequest(state, '0');
+
+  const text = document.getElementById('receipt-view').textContent;
+  assert.ok(text.includes('request #0'));
+  assert.ok(text.includes('vendor.testnet'));
+  assert.ok(text.includes('the first request'));
 });

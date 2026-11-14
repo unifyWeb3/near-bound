@@ -71,9 +71,6 @@ if ! command -v python3 >/dev/null; then
   exit 2
 fi
 
-# Maximum u128 value.
-U128_MAX=340282366920938463463374607431768211455
-
 # Validate an account ID: non-empty, lowercase, digits, dots, dashes,
 # underscores only, and each dot-separated label starts and ends with
 # alphanumeric.
@@ -254,8 +251,8 @@ fi
 
 # Poll for settlement instead of a fixed sleep: read the receipt count until it
 # changes, up to a bounded number of attempts, then read any new receipts.
-POLL_ATTEMPTS=30
-POLL_INTERVAL=1
+POLL_ATTEMPTS="${POLL_ATTEMPTS:-30}"
+POLL_INTERVAL="${POLL_INTERVAL:-1}"
 TRIES=0
 AFTER="$BEFORE"
 while [ "$TRIES" -lt "$POLL_ATTEMPTS" ]; do

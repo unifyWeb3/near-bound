@@ -198,12 +198,12 @@ The score will use the local default benchmark because the event publishes no we
 
 | Gap | Lever | Cost | Applied? | Delta |
 | --- | --- | ---: | --- | ---: |
-| Contract correctness | Sidecars and regressions | High | In progress | Pending |
-| Broken enable flow | Runnable commands and truthful copy | Medium | In progress | Pending |
-| Wrong browser arguments | JSON objects and role-specific methods | Medium | In progress | Pending |
-| Unbounded history | Paged views and bounded index | Medium | In progress | Pending |
-| Weak operations | Pinned build, shell/Node tests, audit | Medium | In progress | Pending |
-| Name collision | Certalyn branding | Low | In progress | Pending |
+| Contract correctness | Sidecars and regressions | High | Yes, local source | Implemented; deployment still pending |
+| Broken enable flow | Runnable commands and truthful copy | Medium | Yes, local source | Implemented; deployment still pending |
+| Wrong browser arguments | JSON objects and role-specific methods | Medium | Yes, local source | Implemented; deployment still pending |
+| Unbounded history | Paged views and bounded index | Medium | Yes, local source | Implemented; deployment still pending |
+| Weak operations | Pinned build, shell/Node tests, audit | Medium | Yes, local source | Implemented; deployment still pending |
+| Name collision | Certalyn branding | Low | Yes, local source | Implemented; deployment still pending |
 
 Deliberately left undone: no deployment, submission, push, public post, or X post edit. Those actions need separate authorization.
 

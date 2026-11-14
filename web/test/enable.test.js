@@ -1,11 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { makeDocument } from './dom-shim.js';
 import {
+  DEFAULT_ENABLE_NAMES,
   enableSteps,
+  renderEnable,
   curlReceiptCount,
   curlReceipt,
   curlPolicy,
 } from '../views/enable.js';
+
+const document = makeDocument();
+globalThis.document = document;
+document.register('enable-names', document.createElement('div'));
+document.register('steps', document.createElement('div'));
 
 const names = {
   contract: 'bound-testnet-97685.testnet',
@@ -56,11 +64,33 @@ test('values above 2^53 go in as base64 args', () => {
   assert.ok(ask.cmd.includes('1000000000000000000000000'));
 });
 
-test('the historical redeploy is dated 2026-11-11', () => {
+test('fresh-account setup does not present historical deployment receipts', () => {
   const steps = enableSteps(names);
   const deploy = steps.find((step) => step.title.startsWith('Build and deploy'));
-  assert.ok(deploy.body.includes('2026-11-11'));
+  assert.ok(deploy);
+  assert.ok(!deploy.body.toLowerCase().includes('historical'));
+  assert.ok(!deploy.body.includes('2026-11-11'));
+  assert.ok(!deploy.body.toLowerCase().includes('carries the receipts'));
   assert.ok(deploy.cmd.includes('contract/target/wasm32-unknown-unknown/release/bound_contract.wasm'));
+});
+
+test('renderEnable starts with fresh default names instead of deployment names', () => {
+  const state = { deployment: names };
+  renderEnable(state, () => {});
+
+  const inputs = document
+    .getElementById('enable-names')
+    .children.map((label) => label.children.find((child) => child.tagName === 'INPUT'));
+  assert.ok(inputs.every(Boolean));
+  assert.deepStrictEqual(
+    inputs.map((input) => input.value),
+    [
+      DEFAULT_ENABLE_NAMES.contract,
+      DEFAULT_ENABLE_NAMES.agent,
+      DEFAULT_ENABLE_NAMES.vendor,
+    ],
+  );
+  assert.deepStrictEqual(state.enableNames, DEFAULT_ENABLE_NAMES);
 });
 
 test('judge curls use finality final and valid JSON', () => {

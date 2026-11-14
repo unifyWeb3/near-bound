@@ -158,10 +158,36 @@ test('getOpenRequests uses the page view when the contract has it', async () => 
     assert.ok(!open.fallback);
     assert.deepStrictEqual(open.items.map((r) => r.request_id), [2, 0]);
     assert.strictEqual(open.errors, 0);
+    assert.strictEqual(open.total, 2);
+    assert.strictEqual(open.complete, true);
   } finally {
     restore();
   }
 });
+
+test('getOpenRequests reports truncation and preserves the available open count', async () => {
+  const requests = Array.from({ length: 51 }, (_, requestId) => ({
+    request_id: requestId,
+    status: 'Pending',
+    agent_id: AGENT,
+  }));
+  const restore = installFetch(async (init) => {
+    const body = JSON.parse(init.body);
+    if (body.params.method_name === 'get_open_requests') return rpcResult(requests);
+    return rpcError('MethodNotFound', 'method not found');
+  });
+  try {
+    const open = await getOpenRequests({ contract: 'truncated.testnet', agent: AGENT });
+    assert.strictEqual(open.items.length, 50);
+    assert.strictEqual(open.items[0].request_id, 50);
+    assert.strictEqual(open.total, 51);
+    assert.strictEqual(open.complete, false);
+    assert.strictEqual(open.errors, 0);
+  } finally {
+    restore();
+  }
+});
+
 test('getReceiptSafe reports a missing receipt as an error, not nothing', async () => {
   const restore = installFetch(async (init) => {
     const body = JSON.parse(init.body);
@@ -196,6 +222,7 @@ test('getOpenRequests falls back to reading each request id', async () => {
     assert.deepStrictEqual(open.items.map((r) => r.request_id), [2, 0]);
     assert.ok(open.fallback);
     assert.strictEqual(open.errors, 0);
+    assert.strictEqual(open.complete, true);
   } finally {
     restore();
   }

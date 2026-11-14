@@ -111,6 +111,43 @@ fn approve(contract: &mut Bound, request_id: u64) -> SpendOutcome {
     contract.approve_request(request_id)
 }
 
+/// Put one request into the frozen state map and remove every sidecar that
+/// the remediated contract would have written for it.
+///
+/// The state root and request layout are the historical ones, so this is a
+/// genuine legacy fixture rather than a mock of the migration methods.
+fn seed_legacy_request(contract: &mut Bound, nonce: u64) -> u64 {
+    let request_id = contract.next_request_id;
+    let request = Request {
+        request_id,
+        agent_id: account(AGENT),
+        vendor: account(VENDOR),
+        amount: 100,
+        nonce,
+        memo: "historical request".to_string(),
+        status: RequestStatus::Pending,
+        created_at: NOW / 1_000_000_000,
+        receipt_id: None,
+        flags: Vec::new(),
+    };
+    contract.requests.insert(&request_id, &request);
+    contract.next_request_id = request_id + 1;
+    contract
+        .agent_requests
+        .insert(&account(AGENT), &vec![request_id]);
+    let mut policy = contract.policy(&account(AGENT));
+    policy.request_count += 1;
+    contract.policies.insert(&account(AGENT), &policy);
+
+    near_sdk::env::storage_remove(SCHEMA_KEY.as_bytes());
+    near_sdk::env::storage_remove(format!("{}{}", NONCE_PREFIX, account(AGENT)).as_bytes());
+    near_sdk::env::storage_remove(format!("{}{}", REQUEST_META_PREFIX, request_id).as_bytes());
+    near_sdk::env::storage_remove(
+        format!("{}{}", MIGRATION_REQUEST_INDEX_PREFIX, account(AGENT)).as_bytes(),
+    );
+    request_id
+}
+
 /// Run a closure and report whether it panicked.
 fn panics(f: impl FnOnce()) -> bool {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).is_err()
@@ -890,18 +927,51 @@ fn the_settlement_callback_is_idempotent() {
 #[test]
 fn the_migration_marks_the_schema_and_keeps_the_requests() {
     let mut contract = setup();
+    let request_id = seed_legacy_request(&mut contract, 1);
 
-    for index in 1..=10u64 {
-        let _ = ask(&mut contract, 10, index, "before migration");
-    }
+    // A legacy state has no current schema marker, so neither a request nor
+    // an approval can run until the owner has migrated it.
+    call_as(account(OWNER));
+    assert!(panics(|| {
+        let _ = contract.approve_request(request_id);
+    }));
+
+    call_as(account(AGENT));
+    assert!(panics(|| {
+        let _ = contract.request_spend(
+            account(AGENT),
+            account(VENDOR),
+            100,
+            2,
+            "before migration".to_string(),
+        );
+    }));
 
     call_as(account(OWNER));
     contract.migrate();
+    // The first call finishes the request phase; the second finishes the
+    // receipt phase and writes the completion marker.
+    assert!(contract.schema_marker_sidecar().is_none());
+    contract.migrate();
+    let marker = contract.schema_marker_sidecar().unwrap();
+    assert_eq!(marker.version, SCHEMA_VERSION);
+    assert_eq!(
+        contract.get_request(request_id).status,
+        RequestStatus::Pending
+    );
+    assert_eq!(contract.get_request_ids(account(AGENT)).len(), 1);
 
-    let marker = near_sdk::env::storage_read(MIGRATION_MARKER_KEY).unwrap();
-    assert_eq!(marker, vec![SCHEMA_VERSION]);
-    assert_eq!(contract.get_request(1).status, RequestStatus::Pending);
-    assert_eq!(contract.get_request_ids(account(AGENT)).len(), 10);
+    // The accepted nonce came from the historical request, so it cannot be
+    // replayed after migration.
+    call_as(account(AGENT));
+    let replay = contract.request_spend(
+        account(AGENT),
+        account(VENDOR),
+        100,
+        1,
+        "replay after migration".to_string(),
+    );
+    assert_eq!(replay.reason, "NonceReplay");
 }
 
 /// The open requests of one agent are the ones waiting for a decision.
@@ -935,4 +1005,397 @@ fn the_first_request_has_the_id_zero() {
 
     let ids = contract.get_request_ids(account(AGENT));
     assert!(ids.contains(&0));
+}
+
+/// A legacy state is migrated in bounded request and receipt phases.
+#[test]
+fn the_legacy_migration_is_batched_and_resumable() {
+    let mut contract = setup();
+    let mut ids = Vec::new();
+    for nonce in 1..=101u64 {
+        let request_id = nonce - 1;
+        ids.push(request_id);
+        let request = Request {
+            request_id,
+            agent_id: account(AGENT),
+            vendor: account(VENDOR),
+            amount: 10,
+            nonce,
+            memo: "legacy".to_string(),
+            status: RequestStatus::Pending,
+            created_at: NOW / 1_000_000_000,
+            receipt_id: None,
+            flags: Vec::new(),
+        };
+        contract.requests.insert(&request_id, &request);
+    }
+    contract.next_request_id = 101;
+    contract.agent_requests.insert(&account(AGENT), &ids);
+    let mut policy = contract.policy(&account(AGENT));
+    policy.request_count = 101;
+    contract.policies.insert(&account(AGENT), &policy);
+    near_sdk::env::storage_remove(SCHEMA_KEY.as_bytes());
+    near_sdk::env::storage_remove(format!("{}{}", NONCE_PREFIX, account(AGENT)).as_bytes());
+
+    call_as(account(OWNER));
+    contract.migrate();
+    let progress = contract.migration_progress_sidecar().unwrap();
+    assert_eq!(progress.stage, MIGRATION_STAGE_REQUESTS);
+    assert_eq!(progress.cursor, MIGRATION_BATCH_SIZE);
+    assert!(contract.schema_marker_sidecar().is_none());
+
+    contract.migrate();
+    let progress = contract.migration_progress_sidecar().unwrap();
+    assert_eq!(progress.stage, MIGRATION_STAGE_RECEIPTS);
+    assert_eq!(progress.cursor, 0);
+    assert!(contract.schema_marker_sidecar().is_none());
+
+    contract.migrate();
+    assert_eq!(
+        contract.schema_marker_sidecar().unwrap().version,
+        SCHEMA_VERSION
+    );
+    assert_eq!(
+        contract
+            .nonce_state_sidecar(&account(AGENT))
+            .unwrap()
+            .accepted_nonce,
+        101
+    );
+    assert_eq!(contract.get_request_ids(account(AGENT)).len(), 101);
+
+    // The completion marker makes another call a no-op.
+    contract.migrate();
+    assert_eq!(
+        contract.schema_marker_sidecar().unwrap().version,
+        SCHEMA_VERSION
+    );
+}
+
+/// An owner-only migration rejects a runner and an unsupported legacy marker.
+#[test]
+fn the_migration_is_owner_only_and_rejects_an_unknown_schema() {
+    let mut contract = setup();
+    near_sdk::env::storage_remove(SCHEMA_KEY.as_bytes());
+    call_as(account(OWNER));
+    contract.set_runner(account("runner.testnet"));
+
+    call_as(account("runner.testnet"));
+    assert!(panics(|| contract.migrate()));
+
+    near_sdk::env::storage_write(LEGACY_SCHEMA_MARKER_KEY, &[99]);
+    call_as(account(OWNER));
+    assert!(panics(|| contract.migrate()));
+}
+
+/// A historical pending transfer keeps its reservation when it is migrated.
+#[test]
+fn the_legacy_migration_preserves_a_reserved_amount() {
+    let mut contract = setup();
+    let request_id = seed_legacy_request(&mut contract, 1);
+    let mut request = contract.get_request(request_id);
+    request.status = RequestStatus::ApprovedPending;
+    contract.requests.insert(&request_id, &request);
+    let mut policy = contract.policy(&account(AGENT));
+    policy.spent = 100;
+    contract.policies.insert(&account(AGENT), &policy);
+
+    call_as(account(OWNER));
+    contract.migrate();
+    contract.migrate();
+
+    let totals = contract
+        .period_totals_sidecar(&account(AGENT), policy.period_start)
+        .unwrap();
+    assert_eq!(totals.settled, 0);
+    assert_eq!(totals.reserved, 100);
+    assert_eq!(totals.used(), 100);
+}
+
+/// A failure in an older rate window does not refund a newer window's slot.
+#[test]
+fn an_old_rate_window_failure_does_not_refund_a_new_window() {
+    let mut contract = setup();
+    let first = ask(&mut contract, 100, 1, "old window");
+    approve(&mut contract, first);
+
+    let later = NOW + 61 * 1_000_000_000;
+    let second = ask_at(&mut contract, 100, 2, "new window", later);
+    call_as_at(account(OWNER), later);
+    assert!(contract.approve_request(second).approved);
+    assert_eq!(contract.get_policy(account(AGENT)).rate_count, 1);
+
+    call_as_at(account(OWNER), later + 1_000_000_000);
+    contract.on_transfer(first, Err(PromiseError::Failed));
+    assert_eq!(
+        contract.get_policy(account(AGENT)).rate_count,
+        1,
+        "the old failure must not take the new window's slot"
+    );
+}
+
+/// A failed reservation is not reported as settled money.
+#[test]
+fn a_failed_reservation_is_reported_separately_from_settled_money() {
+    let mut contract = setup();
+    let first = ask(&mut contract, 100, 1, "fails");
+    let second = ask(&mut contract, 200, 2, "still reserved");
+    approve(&mut contract, first);
+    approve(&mut contract, second);
+
+    contract.on_transfer(first, Err(PromiseError::Failed));
+    let receipt = contract.get_receipt(0);
+    assert_eq!(receipt.outcome, Outcome::Failed);
+    assert_eq!(receipt.spent_after, 0);
+    assert!(
+        receipt
+            .evidence
+            .iter()
+            .any(|item| item.contains("reserved total 200")),
+        "the receipt must report the other reservation separately: {:?}",
+        receipt.evidence
+    );
+    assert_eq!(contract.get_policy(account(AGENT)).spent, 200);
+}
+
+/// A successful transfer still settles when the policy has disappeared.
+#[test]
+fn a_successful_settlement_survives_a_missing_policy() {
+    let mut contract = setup();
+    let request_id = ask(&mut contract, 100, 1, "policy disappears");
+    approve(&mut contract, request_id);
+    contract.policies.remove(&account(AGENT));
+
+    contract.on_transfer(request_id, Ok(()));
+    let receipt = contract.get_receipt(0);
+    assert_eq!(receipt.outcome, Outcome::Approved);
+    assert_eq!(receipt.reason, "PolicyMissing");
+    assert!(receipt
+        .evidence
+        .iter()
+        .any(|item| item.contains("policy was missing")));
+    assert_eq!(
+        contract.get_request(request_id).status,
+        RequestStatus::Approved
+    );
+}
+
+/// A failed transfer also survives a missing policy without claiming a spend.
+#[test]
+fn a_failed_settlement_survives_a_missing_policy() {
+    let mut contract = setup();
+    let request_id = ask(&mut contract, 100, 1, "policy disappears");
+    approve(&mut contract, request_id);
+    contract.policies.remove(&account(AGENT));
+
+    contract.on_transfer(request_id, Err(PromiseError::Failed));
+    let receipt = contract.get_receipt(0);
+    assert_eq!(receipt.outcome, Outcome::Failed);
+    assert_eq!(receipt.reason, "PolicyMissing");
+    assert_eq!(receipt.spent_after, 0);
+    assert!(receipt
+        .evidence
+        .iter()
+        .any(|item| item.contains("policy was missing")));
+}
+
+/// The exact expiry instant is already expired.
+#[test]
+fn a_request_expires_at_the_exact_expiry_instant() {
+    let mut contract = setup();
+    let request_id = ask(&mut contract, 100, 1, "exact expiry");
+    let expiry = NOW + REQUEST_TTL_SECONDS * 1_000_000_000;
+
+    call_as_at(account(OWNER), expiry);
+    let outcome = contract.approve_request(request_id);
+    assert_eq!(outcome.reason, "RequestExpired");
+    assert_eq!(
+        contract.get_request(request_id).status,
+        RequestStatus::Expired
+    );
+}
+
+/// The approved nonce watermark is separate and monotonic.
+#[test]
+fn approvals_use_a_separate_monotonic_nonce_watermark() {
+    let mut contract = setup();
+    let first = ask(&mut contract, 100, 2, "nonce two");
+    let second = ask(&mut contract, 100, 3, "nonce three");
+
+    assert!(approve(&mut contract, second).approved);
+    let refused = approve(&mut contract, first);
+    assert_eq!(refused.reason, "NonceReplay");
+    assert_eq!(
+        contract.get_request(second).status,
+        RequestStatus::ApprovedPending
+    );
+    assert_eq!(contract.get_request(first).status, RequestStatus::Denied);
+    let nonce = contract.nonce_state_sidecar(&account(AGENT)).unwrap();
+    assert_eq!(nonce.accepted_nonce, 3);
+    assert_eq!(nonce.approved_nonce, 3);
+}
+
+/// A denial after a rollover persists the canonical period.
+#[test]
+fn a_denial_after_a_rollover_persists_the_current_period() {
+    let mut contract = setup();
+    call_as(account(OWNER));
+    contract.set_kill_switch(true);
+    let later = NOW + 3_600 * 1_000_000_000;
+
+    call_as_at(account(AGENT), later);
+    let outcome = contract.request_spend(
+        account(AGENT),
+        account(VENDOR),
+        100,
+        1,
+        "denied after rollover".to_string(),
+    );
+    assert_eq!(outcome.reason, "KillSwitch");
+    assert_eq!(
+        contract.get_policy(account(AGENT)).period_start,
+        later / 1_000_000_000
+    );
+}
+
+/// The per-agent request index keeps only its newest 256 ids.
+#[test]
+fn the_request_index_is_bounded_to_256_ids() {
+    let mut contract = setup();
+    contract.next_request_id = 300;
+    contract
+        .agent_requests
+        .insert(&account(AGENT), &(0u64..300u64).collect::<Vec<u64>>());
+
+    call_as(account(AGENT));
+    let outcome = contract.request_spend(
+        account(AGENT),
+        account(VENDOR),
+        100,
+        1,
+        "newest".to_string(),
+    );
+    let ids = contract.get_request_ids(account(AGENT));
+    assert_eq!(ids.len(), REQUEST_INDEX_CAPACITY);
+    assert_eq!(ids.first(), Some(&45));
+    assert_eq!(ids.last(), Some(&outcome.request_id));
+}
+
+/// A malformed sidecar fails loudly instead of being treated as a default.
+#[test]
+fn a_malformed_nonce_sidecar_is_refused() {
+    let mut contract = setup();
+    near_sdk::env::storage_write(
+        format!("{}{}", NONCE_PREFIX, account(AGENT)).as_bytes(),
+        &[1],
+    );
+
+    call_as(account(AGENT));
+    assert!(panics(|| {
+        let _ = contract.request_spend(
+            account(AGENT),
+            account(VENDOR),
+            100,
+            1,
+            "malformed sidecar".to_string(),
+        );
+    }));
+}
+
+/// Migration enforces the receipt retention limit while it builds the index.
+#[test]
+fn the_legacy_migration_enforces_the_receipt_retention_limit() {
+    let mut contract = setup();
+    let created_at = NOW / 1_000_000_000;
+    for receipt_id in 0..=RECEIPT_RETENTION_LIMIT {
+        let receipt = Receipt {
+            receipt_id,
+            request_id: NO_REQUEST,
+            agent_id: account(AGENT),
+            vendor: account(VENDOR),
+            amount: 1,
+            nonce: receipt_id + 1,
+            memo: "legacy receipt".to_string(),
+            outcome: Outcome::Denied,
+            reason: "LegacyDecision".to_string(),
+            rule: "historical decision".to_string(),
+            evidence: Vec::new(),
+            period_start: created_at,
+            spent_after: 0,
+            remaining_after: BUDGET,
+            created_at,
+        };
+        contract.receipts.insert(&receipt_id, &receipt);
+    }
+    contract.next_receipt_id = RECEIPT_RETENTION_LIMIT + 1;
+    near_sdk::env::storage_remove(SCHEMA_KEY.as_bytes());
+
+    call_as(account(OWNER));
+    contract.migrate();
+    let mut calls = 1;
+    while contract.schema_marker_sidecar().is_none() && calls < 110 {
+        // Each migration call is a separate transaction with its own gas.
+        call_as_at(account(OWNER), NOW);
+        contract.migrate();
+        calls += 1;
+    }
+
+    assert_eq!(contract.get_receipt_count(), RECEIPT_RETENTION_LIMIT);
+    assert_eq!(
+        contract.get_agent_receipt_count(account(AGENT)),
+        RECEIPT_RETENTION_LIMIT
+    );
+    assert!(contract.get_receipt_safe(0).is_none());
+    assert!(contract.get_receipt_safe(RECEIPT_RETENTION_LIMIT).is_some());
+    let newest = contract.get_receipts(0, 1);
+    assert_eq!(newest[0].receipt_id, RECEIPT_RETENTION_LIMIT);
+}
+
+/// The stored enum discriminants and the sidecar byte layouts are fixed.
+#[test]
+fn the_frozen_discriminants_and_sidecar_layouts_are_stable() {
+    assert_eq!(borsh::to_vec(&Outcome::Approved).unwrap(), vec![0]);
+    assert_eq!(borsh::to_vec(&Outcome::Denied).unwrap(), vec![1]);
+    assert_eq!(borsh::to_vec(&Outcome::Failed).unwrap(), vec![2]);
+    assert_eq!(borsh::to_vec(&Outcome::Expired).unwrap(), vec![3]);
+    assert_eq!(borsh::to_vec(&RequestStatus::Pending).unwrap(), vec![0]);
+    assert_eq!(
+        borsh::to_vec(&RequestStatus::NeedsApproval).unwrap(),
+        vec![1]
+    );
+    assert_eq!(borsh::to_vec(&RequestStatus::Approved).unwrap(), vec![2]);
+    assert_eq!(borsh::to_vec(&RequestStatus::Denied).unwrap(), vec![3]);
+    assert_eq!(
+        borsh::to_vec(&RequestStatus::ApprovedPending).unwrap(),
+        vec![4]
+    );
+    assert_eq!(
+        borsh::to_vec(&RequestStatus::SettlementFailed).unwrap(),
+        vec![5]
+    );
+    assert_eq!(borsh::to_vec(&RequestStatus::Expired).unwrap(), vec![6]);
+
+    assert_eq!(
+        encode_sidecar(&PeriodTotals {
+            settled: 1,
+            reserved: 2,
+        }),
+        vec![
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+            0, 0, 0
+        ]
+    );
+    assert_eq!(
+        encode_sidecar(&NonceState {
+            accepted_nonce: 1,
+            approved_nonce: 2,
+        }),
+        vec![1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0]
+    );
+    assert_eq!(
+        encode_sidecar(&SchemaMarker {
+            version: SCHEMA_VERSION,
+        }),
+        vec![SCHEMA_VERSION]
+    );
 }

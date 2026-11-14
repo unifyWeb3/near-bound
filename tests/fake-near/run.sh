@@ -7,11 +7,12 @@
 # Asserts:
 #   * JSON escaping (memo with quotes/backslashes round-trips)
 #   * numeric rejection (zero, float, negative, non-digits, above u128 max)
-#   * monotonic nonce behavior (concurrent-safe counter increases across runs)
+#   * monotonic nonce behavior (the counter increases across runs)
+#   * deterministic transaction ids
+#   * separate request and receipt ids across request, approval and settlement
 #   * expected PASS/FAIL transcripts for protocol_arm.sh (all six steps PASS)
-#   * settlement polling (agent.sh reports new receipts)
 #
-# Dependency-free: bash, python3, flock, base64 only.
+# Dependency-free: bash, python3, flock and base64 only.
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -31,6 +32,14 @@ fail() { FAIL=$((FAIL + 1)); printf 'not ok  %s\n' "$*" >&2; }
 
 reset_state() {
   cp "$ROOT/tests/fake-near/state.json" "$FAKE_NEAR_STATE"
+}
+
+fake_view() {
+  local method="$1"
+  local args="$2"
+  "$FAKE_NEAR" contract call-function as-read-only bound-testnet-97685.testnet "$method" \
+    json-args "$args" network-config testnet now 2>&1 \
+    | awk '/return value \(printed to stdout\)/{getline; print; exit}'
 }
 
 # ---- numeric rejection: agent.sh must exit non-zero for bad amounts ----
@@ -60,10 +69,10 @@ expect_rejection "above u128 max" "340282366920938463463374607431768211456"
 # ---- JSON escaping: memo with quotes and backslashes ----
 reset_state
 note "JSON escaping (agent.sh)"
-out=$("$AGENT_SH" --contract bound-testnet-97685.testnet --agent bound-agent.testnet \
-  --vendor bound-vendor.testnet --amount 1000000000000000000000000 \
-  --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" --nonce 100 \
-  --memo 'he said "hi" \t there' 2>&1)
+out=$(POLL_ATTEMPTS=1 POLL_INTERVAL=0 "$AGENT_SH" --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" \
+  --nonce 100 --memo 'he said "hi" \t there' 2>&1)
 rc=$?
 if [ "$rc" -ne 0 ]; then
   fail "JSON escaping: agent.sh exited $rc"
@@ -78,13 +87,13 @@ fi
 # ---- monotonic nonce: nonce increases across runs ----
 reset_state
 note "monotonic nonce (agent.sh)"
-n1=$("$AGENT_SH" --contract bound-testnet-97685.testnet --agent bound-agent.testnet \
-  --vendor bound-vendor.testnet --amount 1000000000000000000000000 \
-  --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" 2>&1 \
+n1=$(POLL_ATTEMPTS=1 POLL_INTERVAL=0 "$AGENT_SH" --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" 2>&1 \
   | grep -oE 'using persistent nonce [0-9]+' | grep -oE '[0-9]+$' | tail -1)
-n2=$("$AGENT_SH" --contract bound-testnet-97685.testnet --agent bound-agent.testnet \
-  --vendor bound-vendor.testnet --amount 1000000000000000000000000 \
-  --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" 2>&1 \
+n2=$(POLL_ATTEMPTS=1 POLL_INTERVAL=0 "$AGENT_SH" --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" 2>&1 \
   | grep -oE 'using persistent nonce [0-9]+' | grep -oE '[0-9]+$' | tail -1)
 if [ -z "$n1" ] || [ -z "$n2" ]; then
   fail "monotonic nonce: could not read nonce from agent.sh output"
@@ -94,21 +103,55 @@ else
   fail "monotonic nonce: $n1 -> $n2 (not increased)"
 fi
 
-# ---- valid run with settlement polling ----
+# ---- request, approval and settlement keep separate ids ----
 reset_state
-note "settlement polling (agent.sh)"
-out=$("$AGENT_SH" --contract bound-testnet-97685.testnet --agent bound-agent.testnet \
-  --vendor bound-vendor.testnet --amount 1000000000000000000000000 \
-  --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" --nonce 200 2>&1)
+note "request and receipt lifecycle"
+out=$(POLL_ATTEMPTS=1 POLL_INTERVAL=0 "$AGENT_SH" --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" \
+  --nonce 200 2>&1)
 rc=$?
+request_id=$(printf '%s' "$out" | awk '/request number/{print $NF; exit}')
+count_after_request=$(fake_view get_receipt_count '{}')
 if [ "$rc" -ne 0 ]; then
-  fail "settlement polling: agent.sh exited $rc"
+  fail "request lifecycle: agent.sh exited $rc"
   printf '%s\n' "$out" | tail -8 >&2
-elif printf '%s' "$out" | grep -q 'transaction' && printf '%s' "$out" | grep -q 'receipt 30'; then
-  pass "settlement polling: transaction hash and new receipt reported"
+elif [ "$request_id" != "14" ] || [ "$count_after_request" != "30" ]; then
+  fail "request lifecycle: expected request 14 and receipt count 30, got request '$request_id' and count '$count_after_request'"
 else
-  fail "settlement polling: expected transaction + receipt 30"
-  printf '%s\n' "$out" | tail -10 >&2
+  pass "request lifecycle: request 14 did not manufacture receipt 30"
+fi
+
+approve_out=$("$FAKE_NEAR" contract call-function as-transaction bound-testnet-97685.testnet \
+  approve_request json-args '{"request_id":14}' sign-as owner.testnet \
+  network-config testnet send 2>&1)
+count_after_settlement=$(fake_view get_receipt_count '{}')
+receipt_30=$(fake_view get_receipt '{"receipt_id":30}')
+if printf '%s' "$approve_out" | grep -q 'succeeded' \
+  && [ "$count_after_settlement" = "31" ] \
+  && printf '%s' "$receipt_30" | grep -q '"outcome": "Approved"'; then
+  pass "settlement lifecycle: receipt 30 settled request 14"
+else
+  fail "settlement lifecycle: expected receipt count 31 and an approved receipt 30"
+  printf '%s\n' "$approve_out" | tail -8 >&2
+fi
+
+# ---- transaction ids are deterministic for the same fake state ----
+reset_state
+note "deterministic transaction id"
+tx1=$(POLL_ATTEMPTS=1 POLL_INTERVAL=0 "$AGENT_SH" --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" \
+  --nonce 300 2>&1 | awk '/^transaction /{print $2; exit}')
+reset_state
+tx2=$(POLL_ATTEMPTS=1 POLL_INTERVAL=0 "$AGENT_SH" --contract bound-testnet-97685.testnet \
+  --agent bound-agent.testnet --vendor bound-vendor.testnet \
+  --amount 1000000000000000000000000 --key /tmp/no-such-key.json --near-bin "$FAKE_NEAR" \
+  --nonce 300 2>&1 | awk '/^transaction /{print $2; exit}')
+if [ -n "$tx1" ] && [ "$tx1" = "$tx2" ]; then
+  pass "deterministic transaction id: $tx1"
+else
+  fail "deterministic transaction id: '$tx1' != '$tx2'"
 fi
 
 # ---- protocol_arm.sh: all six steps PASS ----

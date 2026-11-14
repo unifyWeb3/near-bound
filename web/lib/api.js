@@ -129,10 +129,10 @@ export async function viewFunction(contract, method, args = {}) {
 /**
  * Whether one contract method exists, remembered per contract.
  *
- * Used to feature-detect the paged views (`get_receipts`, `get_requests`,
- * `get_open_requests`) so the console keeps working against the historical
- * contract, which only has `get_receipt_count`, `get_receipt` and
- * `get_request_ids`.
+ * Used to feature-detect optional views (`get_receipt_safe`,
+ * `get_agent_receipts`, `get_agent_receipt_count` and `get_open_requests`)
+ * so the console keeps working against the historical contract, which only
+ * has `get_receipt_count`, `get_receipt` and `get_request_ids`.
  *
  * @param {string} contract
  * @param {string} method
@@ -419,7 +419,7 @@ export async function getLedger(deployment, cache, { offset = 0, limit = PAGE_LI
  * unbounded RPC calls.
  *
  * @param {{contract: string, agent: string}} deployment
- * @returns {Promise<{items: object[], errors: number, failedIds: number[], complete: boolean, fallback: boolean, total?: number}>}
+ * @returns {Promise<{items: object[], errors: number, failedIds: number[], complete: boolean, fallback: boolean, total?: number}>} `total` is the known open count; the paged path preserves the full count available before the browser cap.
  */
 export async function getOpenRequests(deployment) {
   const requests = [];
@@ -441,15 +441,18 @@ export async function getOpenRequests(deployment) {
         failedIds.push('page');
         return { items: requests, errors, failedIds, complete: false, fallback: false };
       }
-      const pageRequests = page.slice(0, OPEN_REQUEST_LIMIT);
-      pageRequests.sort((a, b) => Number(b.request_id) - Number(a.request_id));
+      const openCount = page.length;
+      const pageRequests = page
+        .slice()
+        .sort((a, b) => Number(b.request_id) - Number(a.request_id))
+        .slice(0, OPEN_REQUEST_LIMIT);
       return {
         items: pageRequests,
         errors: 0,
         failedIds: [],
-        complete: true,
+        complete: openCount <= OPEN_REQUEST_LIMIT,
         fallback: false,
-        total: pageRequests.length,
+        total: openCount,
       };
     }
     fallback = true;
@@ -469,6 +472,7 @@ export async function getOpenRequests(deployment) {
         throw new Error('unexpected request id list');
       }
       const bounded = ids.slice().reverse().slice(0, OPEN_REQUEST_LIMIT);
+      complete = ids.length <= OPEN_REQUEST_LIMIT;
       for (const id of bounded) {
         try {
           const request = await getRequest(deployment, id);

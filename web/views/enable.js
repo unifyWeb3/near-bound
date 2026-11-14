@@ -76,7 +76,7 @@ export function enableSteps(names) {
     },
     {
       title: 'Build and deploy the policy contract',
-      body: 'Built locally from the repository and deployed to the owner account. The wasm path is the release build output; wasm-opt shrinks it exactly as the Makefile does. The historical redeploy that carries the receipts forward was 2026-11-11.',
+      body: 'Built locally from the repository and deployed to the owner account. The wasm path is the release build output; wasm-opt shrinks it exactly as the Makefile does.',
       cmd: [
         `cargo build --release --locked --target wasm32-unknown-unknown --manifest-path contract/Cargo.toml`,
         `wasm-opt -Oz --enable-nontrapping-float-to-int --enable-bulk-memory contract/target/wasm32-unknown-unknown/release/bound_contract.wasm -o contract/bound_contract.wasm`,
@@ -100,7 +100,7 @@ export function enableSteps(names) {
     },
     {
       title: 'The owner approves, money moves, receipt exists',
-      body: 'A human or a runner decides. Use the request id returned by step 5 — do not hardcode 0. The transfer is made by the contract as a plain NEAR transfer, and both outcomes are receipts with reason, rule and evidence.',
+      body: 'A human or a runner decides. Use the request id returned by step 5; do not hardcode 0. The transfer is made by the contract as a plain NEAR transfer, and both outcomes are receipts with reason, rule and evidence.',
       cmd: `near contract call-function as-transaction ${contract} approve_request json-args '{"request_id":REQUEST_ID}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' sign-as ${contract} network-config testnet sign-with-legacy-keychain send`,
     },
     {
@@ -123,7 +123,7 @@ export function enableSteps(names) {
  * @param {(names: object) => void} update
  */
 export function renderEnable(state, update) {
-  const names = state.enableNames ?? { ...state.deployment };
+  const names = state.enableNames ?? { ...DEFAULT_ENABLE_NAMES };
   state.enableNames = names;
 
   const form = document.getElementById('enable-names');

@@ -2,6 +2,10 @@
   "last_nonce": {
     "bound-agent.testnet": 15
   },
+  "request_count": 14,
+  "next_request_id": 14,
   "receipt_count": 30,
-  "receipts": {}
+  "receipts": {},
+  "requests": {},
+  "transaction_count": 0
 }

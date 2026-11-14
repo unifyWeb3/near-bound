@@ -17,7 +17,7 @@ Returns a `<button>`. Sets `aria-busy` and disables while busy. `variant` is `pr
 A metric card (`.stat`) with a label, a value and an optional note.
 
 ### `badge(text, tone)` and state helpers (`badge.js`)
-`badge` renders a `.pill`. `outcomeLabel(outcome)` maps `Approved|Denied|Failed` to tones; `stateLabel`/`stateWords` map request states (`Pending`, `NeedsApproval`, `ApprovedPending`, `Approved`, `SettlementFailed`, `Denied`) to tones and human labels.
+`badge` renders a `.pill`. `outcomeLabel(outcome)` maps `Approved|Denied|Failed|Expired` to tones; `stateLabel`/`stateWords` map request states (`Pending`, `NeedsApproval`, `ApprovedPending`, `Approved`, `SettlementFailed`, `Denied`, `Expired`) to tones and human labels.
 
 ### `field({ label, value, hint?, placeholder?, onChange?, onCommit? })`
 A labelled text input. Associates `<label>` and an optional hint via `aria-describedby`. `onChange` fires per keystroke, `onCommit` on change. Returns the `<input>` with a `.wrapper` property.

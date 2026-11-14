@@ -65,7 +65,7 @@ export function renderRequests(state, act) {
   const host = document.getElementById('requests-view');
   if (!host) return;
   const countNode = document.getElementById('requests-count');
-  const { items, errors, failedIds, complete, fallback } = state.requests ?? {};
+  const { items, errors, failedIds, complete, fallback, openCount } = state.requests ?? {};
 
   const now = Date.now() / 1000;
   const open = (items ?? []).filter(
@@ -76,7 +76,8 @@ export function renderRequests(state, act) {
 
   if (countNode) {
     const oldest = oldestOpenAge(open, now);
-    countNode.textContent = `${open.length} open${oldest ? ` · oldest opened ${oldest} ago` : ''}`;
+    const availableOpen = openCount ?? open.length;
+    countNode.textContent = `${availableOpen} open${oldest ? ` · oldest opened ${oldest} ago` : ''}`;
   }
 
   const nodes = [];
@@ -138,7 +139,7 @@ function requestCard(request, now, act, state) {
   const head = el('div', 'decision-head');
   const timing = requestTiming(request, now);
   const tone = timing.expired ? 'denied' : stateLabel(request.status);
-  head.append(badge(stateWords(request.status) + (timing.expired ? ' — expired' : ''), tone));
+  head.append(badge(stateWords(request.status) + (timing.expired ? ', expired' : ''), tone));
   head.append(el('span', 'decision-id', `request #${request.request_id}`));
   head.append(el('span', 'decision-vendor mono', request.vendor));
   head.append(el('span', 'decision-amount', formatNear(request.amount)));
@@ -165,7 +166,7 @@ function requestCard(request, now, act, state) {
   const allowed = isActAllowed(request.status, state.wallet?.accountId ?? null, state.owner, state.runner, state.deployment.agent);
 
   if (timing.expired) {
-    const expiredNote = el('button', 'ghost-button', 'Expired — no action', {
+    const expiredNote = el('button', 'ghost-button', 'Expired, no action', {
       type: 'button',
       disabled: true,
     });

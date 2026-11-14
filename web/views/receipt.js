@@ -65,7 +65,7 @@ export async function renderReceipt(state, id) {
 export async function renderRequest(state, id) {
   const host = document.getElementById('receipt-view');
   if (!host) return;
-  let request = state.requests.find((item) => Number(item.request_id) === Number(id));
+  let request = state.requests.items.find((item) => Number(item.request_id) === Number(id));
   if (!request) {
     try {
       request = await getRequest(state.deployment, Number(id));

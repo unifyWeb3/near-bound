@@ -39,7 +39,7 @@ import { renderFilters, renderLedger, PAGE_LIMIT } from './views/ledger.js';
 import { renderPolicy } from './views/policy.js';
 import { renderReceipt, renderRequest } from './views/receipt.js';
 import { renderRequests } from './views/requests.js';
-import { renderEnable } from './views/enable.js';
+import { renderEnable, DEFAULT_ENABLE_NAMES } from './views/enable.js';
 import { renderJudge } from './views/judge.js';
 import { chooseWriteMethod } from './lib/act.js';
 
@@ -64,7 +64,7 @@ const store = createStore({
   stale: false,
   wallet: { status: 'idle', accountId: null, walletId: null, error: null },
   visible: PAGE_LIMIT,
-  enableNames: { ...deployment },
+  enableNames: { ...DEFAULT_ENABLE_NAMES },
   actions: {},
 });
 
@@ -105,7 +105,7 @@ async function refresh() {
       owner,
       runner,
       ledger,
-      requests,
+      requests: { ...requests, openCount: requests.total ?? requests.items.length },
       loadedAt: new Date(),
       loading: false,
       error: null,
@@ -160,7 +160,7 @@ function paint() {
   const stamp = document.getElementById('loaded');
   if (stamp) {
     stamp.textContent = state.loadedAt
-      ? `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.requests.items.length} open requests, ${state.ledger.globalTotal ?? '?'} receipts on chain${state.stale ? ' (stale)' : ''}`
+      ? `Read at ${state.loadedAt.toLocaleTimeString()}, ${state.requests.openCount ?? state.requests.items.length} open requests, ${state.ledger.globalTotal ?? '?'} receipts on chain${state.stale ? ' (stale)' : ''}`
       : 'Reading the chain...';
   }
   if (state.ledger.errors > 0) {

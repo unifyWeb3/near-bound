@@ -5,6 +5,9 @@ on:
     branches: [master, 'fix/**']
   pull_request:
 
+permissions:
+  contents: read
+
 env:
   # The Rust toolchain is pinned in rust-toolchain.toml (1.99.1). The same
   # toolchain is used for policy and contract so the wasm build is reproducible.
@@ -18,8 +21,8 @@ jobs:
     name: policy engine
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
         with:
           components: rustfmt, clippy
       - name: test
@@ -36,8 +39,8 @@ jobs:
     name: contract
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.99.1
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: dtolnay/rust-toolchain@d124f86f28ff42855784ff3319f48ac182c248f8 # 1.99.1
         with:
           components: rustfmt, clippy
           targets: wasm32-unknown-unknown
@@ -62,11 +65,29 @@ jobs:
           fi
           echo "wasm sha256 $actual matches docs/wasm-lock.json"
       - name: shellcheck
+        env:
+          SHELLCHECK_VERSION: v0.11.0
+          SHELLCHECK_ARCHIVE: shellcheck-v0.11.0.linux.x86_64.tar.xz
+          SHELLCHECK_SHA256: 8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198
         run: |
-          sudo apt-get update -y && sudo apt-get install -y shellcheck
-          shellcheck demo/agent.sh demo/protocol_arm.sh
+          archive="$RUNNER_TEMP/$SHELLCHECK_ARCHIVE"
+          curl -fsSL \
+            "https://github.com/koalaman/shellcheck/releases/download/$SHELLCHECK_VERSION/$SHELLCHECK_ARCHIVE" \
+            -o "$archive"
+          printf '%s  %s\n' "$SHELLCHECK_SHA256" "$archive" | sha256sum -c -
+          tar -xJf "$archive" -C "$RUNNER_TEMP"
+          "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION/shellcheck" --version
+          "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION/shellcheck" \
+            demo/agent.sh \
+            demo/protocol_arm.sh \
+            scripts/build-wasm.sh \
+            scripts/dependency-check.sh \
+            tests/fake-near/run.sh \
+            tests/dependency-check/run.sh
       - name: dependency vulnerability check
         run: bash scripts/dependency-check.sh
+      - name: dependency-check failure-path tests
+        run: bash tests/dependency-check/run.sh
       - name: fake-NEAR shell tests
         run: bash tests/fake-near/run.sh
       - name: claims consistency check
@@ -75,16 +96,19 @@ jobs:
   web:
     name: web tests
     runs-on: ubuntu-latest
-    # web/package.json is added by the separate web task. Tolerate its absence
-    # until integration, then prefer running the Node test suite.
-    if: ${{ always() && (github.event_name == 'push' || github.event_name == 'pull_request') }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: install the locked web dependencies
+        working-directory: web
+        run: npm ci --ignore-scripts
       - name: run the web Node tests
-        run: cd web && node --test test/*.test.js
+        working-directory: web
+        run: npm test
       - name: every module parses
         run: |
           for file in web/*.js web/lib/*.js web/views/*.js web/components/*.js; do

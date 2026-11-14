@@ -33,9 +33,6 @@ VENDOR="${3:?vendor account}"
 KEY="${4:?path to the restricted key file}"
 NONCE="${5:-}"
 
-# Maximum u128 value.
-U128_MAX=340282366920938463463374607431768211455
-
 PASS=0
 FAIL=0
 

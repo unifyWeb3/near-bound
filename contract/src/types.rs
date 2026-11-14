@@ -181,12 +181,52 @@ impl PeriodTotals {
 }
 
 /// Request data that cannot be added to the frozen `Request` record.
+///
+/// This is the version-2 sidecar format. Version 1 had no approval rate
+/// window, so it cannot safely refund a failed payment in a newer window.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct RequestMeta {
     /// When the request expires, in seconds since the epoch.
     pub expires_at: u64,
     /// The period that holds the reservation. Zero means no reservation.
     pub reserved_period_start: u64,
+    /// The rate window in which the request was approved. Zero means unknown.
+    pub approval_rate_window_start: u64,
+}
+
+/// The schema marker written when the current sidecar layout is complete.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct SchemaMarker {
+    pub version: u8,
+}
+
+/// The persisted position of the bounded legacy migration.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct MigrationProgress {
+    /// Zero is the request phase, one is the receipt phase, two is complete.
+    pub stage: u8,
+    /// The next id to inspect in the current phase.
+    pub cursor: u64,
+}
+
+/// The first and one-past-last ordinals in a receipt index.
+///
+/// Receipt ids are stored in separate slots, so appending and removing the
+/// oldest receipt do not rewrite or scan the whole index.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct ReceiptIndexState {
+    pub start: u64,
+    pub len: u64,
+}
+
+impl ReceiptIndexState {
+    pub fn empty() -> Self {
+        Self { start: 0, len: 0 }
+    }
+
+    pub fn end(&self) -> u64 {
+        self.start.saturating_add(self.len)
+    }
 }
 
 /// The two nonce watermarks of an agent.

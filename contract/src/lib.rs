@@ -15,7 +15,6 @@ use near_sdk::collections::{LookupMap, LookupSet};
 use near_sdk::env;
 use near_sdk::require;
 use near_sdk::{near, AccountId, NearToken, PromiseError};
-use std::collections::BTreeMap;
 
 mod types;
 
@@ -25,8 +24,8 @@ mod tests;
 pub use bound_policy::Evaluation;
 pub use bound_policy::Policy;
 pub use types::{
-    NonceState, Outcome, PeriodTotals, PolicyView, Receipt, Request, RequestMeta, RequestStatus,
-    RequestView, SpendOutcome,
+    MigrationProgress, NonceState, Outcome, PeriodTotals, PolicyView, Receipt, ReceiptIndexState,
+    Request, RequestMeta, RequestStatus, RequestView, SchemaMarker, SpendOutcome,
 };
 
 /// The request id written on a receipt that has no request behind it.
@@ -54,18 +53,45 @@ const MAX_PERIOD_SECONDS: u64 = 31_536_000;
 /// The largest payment rate accepted, in payments per minute.
 const MAX_RATE_LIMIT: u64 = 10_000;
 
-/// The key that records which schema version has migrated the state.
-const MIGRATION_MARKER_KEY: &[u8] = b"certalyn_schema";
+/// The versioned completion marker for the current sidecar schema.
+const SCHEMA_KEY: &str = "certalyn_schema_v2";
+
+/// The marker written by the earlier, unbounded migration implementation.
+///
+/// It is deliberately not treated as current: a state carrying only this key
+/// still has to pass through the bounded migration below.
+const LEGACY_SCHEMA_MARKER_KEY: &[u8] = b"certalyn_schema";
+
+/// The schema version written by the earlier, unbounded migration code.
+///
+/// A state with this marker still has to pass through the bounded migration
+/// because the earlier implementation did not build the current indexes.
+const LEGACY_SCHEMA_VERSION: u8 = 3;
+
+/// The persisted cursor for the bounded migration.
+const MIGRATION_PROGRESS_KEY: &str = "certalyn_migration_v1";
 
 /// The schema version this build writes.
-const SCHEMA_VERSION: u8 = 3;
+const SCHEMA_VERSION: u8 = 4;
+
+/// The largest number of legacy ids inspected by one migration call.
+const MIGRATION_BATCH_SIZE: u64 = 100;
+
+/// The migration stages. The values are part of the version-1 progress
+/// sidecar format.
+const MIGRATION_STAGE_REQUESTS: u8 = 0;
+const MIGRATION_STAGE_RECEIPTS: u8 = 1;
+const MIGRATION_STAGE_COMPLETE: u8 = 2;
 
 /// The sidecar key prefixes. Each format is versioned.
 const NONCE_PREFIX: &str = "certalyn_nonce_v1:";
 const PERIOD_PREFIX: &str = "certalyn_period_v1:";
-const REQUEST_META_PREFIX: &str = "certalyn_request_meta_v1:";
-const RECEIPT_COUNT_KEY: &str = "certalyn_receipt_count_v1";
-const AGENT_RECEIPT_COUNT_PREFIX: &str = "certalyn_agent_receipt_count_v1:";
+const REQUEST_META_PREFIX: &str = "certalyn_request_meta_v2:";
+const RECEIPT_INDEX_KEY: &str = "certalyn_receipt_index_v2";
+const RECEIPT_SLOT_PREFIX: &str = "certalyn_receipt_slot_v2:";
+const AGENT_RECEIPT_INDEX_PREFIX: &str = "certalyn_agent_receipt_index_v2:";
+const AGENT_RECEIPT_SLOT_PREFIX: &str = "certalyn_agent_receipt_slot_v2:";
+const MIGRATION_REQUEST_INDEX_PREFIX: &str = "certalyn_migration_request_index_v1:";
 
 /// The current time in seconds.
 ///
@@ -114,7 +140,7 @@ impl Bound {
     #[init]
     pub fn new() -> Self {
         let owner = env::predecessor_account_id();
-        Self {
+        let contract = Self {
             owner: owner.clone(),
             runner: owner,
             policies: LookupMap::new(b"policies".to_vec()),
@@ -125,163 +151,88 @@ impl Bound {
             next_request_id: 0,
             next_receipt_id: 0,
             kill_switch: false,
-        }
+        };
+        // A fresh deployment is already at the current schema. A legacy state
+        // has no marker and must pass through `migrate` before it can spend.
+        env::storage_write(
+            SCHEMA_KEY.as_bytes(),
+            &encode_sidecar(&SchemaMarker {
+                version: SCHEMA_VERSION,
+            }),
+        );
+        contract
     }
 
     /// Bring legacy state up to the current sidecar schema. Owner only.
     ///
-    /// The method is idempotent. It backfills nonce watermarks, request
-    /// metadata, period totals and receipt counts. It also trims each legacy
-    /// request index to the newest 256 ids. It never changes a stored policy,
-    /// request or receipt, and it never deletes an existing receipt.
+    /// The method is idempotent and does a bounded batch per call. It first
+    /// walks request ids, then receipt ids, using the versioned progress
+    /// sidecar as its cursor. Spend operations stay closed until the final
+    /// call writes the completion marker.
     pub fn migrate(&mut self) {
         self.only_owner();
 
-        let marker = env::storage_read(MIGRATION_MARKER_KEY).unwrap_or_default();
-        if marker == vec![SCHEMA_VERSION] {
-            env::log_str("MigrationAlreadyApplied");
-            return;
-        }
-        if !marker.is_empty() {
+        if let Some(marker) = self.schema_marker_sidecar() {
+            if marker.version == SCHEMA_VERSION {
+                env::log_str("MigrationAlreadyApplied");
+                return;
+            }
             env::panic_str("unsupported Certalyn migration schema");
         }
+        self.validate_legacy_schema_marker();
 
-        let mut requests_by_agent: BTreeMap<String, Vec<Request>> = BTreeMap::new();
-        for request_id in 0..self.next_request_id {
-            if let Some(request) = self.requests.get(&request_id) {
-                requests_by_agent
-                    .entry(request.agent_id.to_string())
-                    .or_default()
-                    .push(request);
-            }
-        }
+        let mut progress = self
+            .migration_progress_sidecar()
+            .unwrap_or(MigrationProgress {
+                stage: MIGRATION_STAGE_REQUESTS,
+                cursor: 0,
+            });
 
-        for (agent_text, requests) in &requests_by_agent {
-            let agent_id: AccountId = agent_text.parse().unwrap();
-            let policy = self.policies.get(&agent_id);
-
-            let mut accepted_nonce = policy.as_ref().map(|p| p.last_nonce).unwrap_or(0);
-            let mut approved_nonce = accepted_nonce;
-            for request in requests {
-                accepted_nonce = accepted_nonce.max(request.nonce);
-                if matches!(
-                    request.status,
-                    RequestStatus::Approved
-                        | RequestStatus::ApprovedPending
-                        | RequestStatus::SettlementFailed
-                ) {
-                    approved_nonce = approved_nonce.max(request.nonce);
-                }
-            }
-            if self.nonce_state_sidecar(&agent_id).is_none() {
-                self.set_nonce_state(
-                    &agent_id,
-                    &NonceState {
-                        accepted_nonce,
-                        approved_nonce,
-                    },
-                );
-            }
-
-            let mut reserved_by_period: BTreeMap<u64, u128> = BTreeMap::new();
-            for request in requests {
-                if self.request_meta_sidecar(request.request_id).is_none() {
-                    let reserved_period = if request.status == RequestStatus::ApprovedPending {
-                        policy.as_ref().map(|p| p.period_start).unwrap_or(0)
-                    } else {
-                        0
-                    };
-                    self.set_request_meta(
-                        request.request_id,
-                        &RequestMeta {
-                            expires_at: request.created_at.saturating_add(REQUEST_TTL_SECONDS),
-                            reserved_period_start: reserved_period,
-                        },
-                    );
-                }
-                if request.status == RequestStatus::ApprovedPending {
-                    let period = self
-                        .request_meta_sidecar(request.request_id)
-                        .map(|meta| meta.reserved_period_start)
-                        .unwrap_or(0);
-                    if period != 0 {
-                        *reserved_by_period.entry(period).or_default() = reserved_by_period
-                            .get(&period)
-                            .copied()
-                            .unwrap_or(0)
-                            .saturating_add(request.amount);
+        match progress.stage {
+            MIGRATION_STAGE_REQUESTS => {
+                let end = self
+                    .next_request_id
+                    .min(progress.cursor.saturating_add(MIGRATION_BATCH_SIZE));
+                while progress.cursor < end {
+                    if let Some(request) = self.requests.get(&progress.cursor) {
+                        self.migrate_request(&request);
                     }
+                    progress.cursor += 1;
+                }
+                if progress.cursor >= self.next_request_id {
+                    progress.stage = MIGRATION_STAGE_RECEIPTS;
+                    progress.cursor = 0;
                 }
             }
-
-            if let Some(policy) = policy.as_ref() {
-                for (period, reserved) in &reserved_by_period {
-                    if self.period_totals_sidecar(&agent_id, *period).is_none() {
-                        let settled = if policy.period_start == *period {
-                            policy.spent.saturating_sub(*reserved)
-                        } else {
-                            0
-                        };
-                        self.set_period_totals(
-                            &agent_id,
-                            *period,
-                            &PeriodTotals {
-                                settled,
-                                reserved: *reserved,
-                            },
-                        );
+            MIGRATION_STAGE_RECEIPTS => {
+                let end = self
+                    .next_receipt_id
+                    .min(progress.cursor.saturating_add(MIGRATION_BATCH_SIZE));
+                while progress.cursor < end {
+                    if let Some(receipt) = self.receipts.get(&progress.cursor) {
+                        self.migrate_receipt(&receipt);
                     }
+                    progress.cursor += 1;
                 }
-                if self
-                    .period_totals_sidecar(&agent_id, policy.period_start)
-                    .is_none()
-                {
-                    let reserved = reserved_by_period
-                        .get(&policy.period_start)
-                        .copied()
-                        .unwrap_or(0);
-                    self.set_period_totals(
-                        &agent_id,
-                        policy.period_start,
-                        &PeriodTotals {
-                            settled: policy.spent.saturating_sub(reserved),
-                            reserved,
-                        },
-                    );
+                if progress.cursor >= self.next_receipt_id {
+                    progress.stage = MIGRATION_STAGE_COMPLETE;
+                    progress.cursor = 0;
                 }
             }
-
-            let mut index = self.agent_requests.get(&agent_id).unwrap_or_default();
-            if index.len() > REQUEST_INDEX_CAPACITY {
-                let remove = index.len() - REQUEST_INDEX_CAPACITY;
-                index.drain(0..remove);
-                self.agent_requests.insert(&agent_id, &index);
-            }
+            MIGRATION_STAGE_COMPLETE => {}
+            _ => env::panic_str("invalid Certalyn migration progress"),
         }
 
-        let mut receipt_count = 0u64;
-        let mut agent_receipt_counts: BTreeMap<String, u64> = BTreeMap::new();
-        for receipt_id in 0..self.next_receipt_id {
-            if let Some(receipt) = self.receipts.get(&receipt_id) {
-                receipt_count += 1;
-                *agent_receipt_counts
-                    .entry(receipt.agent_id.to_string())
-                    .or_default() += 1;
-            }
+        self.set_migration_progress(&progress);
+        if progress.stage == MIGRATION_STAGE_COMPLETE {
+            self.write_schema_marker();
+            env::log_str("MigrationApplied");
+        } else {
+            env::log_str(&format!(
+                "MigrationProgress stage {} cursor {}",
+                progress.stage, progress.cursor
+            ));
         }
-        self.set_receipt_count(receipt_count);
-        for (agent_text, count) in agent_receipt_counts {
-            let agent_id: AccountId = agent_text.parse().unwrap();
-            self.set_agent_receipt_count(&agent_id, count);
-        }
-
-        env::storage_write(MIGRATION_MARKER_KEY, &[SCHEMA_VERSION]);
-        env::log_str(&format!(
-            "MigrationApplied schema {} requests {} receipts {}",
-            SCHEMA_VERSION,
-            requests_by_agent.values().map(Vec::len).sum::<usize>(),
-            receipt_count
-        ));
     }
 
     /// Hand the counterparty decisions to a service account.
@@ -464,6 +415,7 @@ impl Bound {
             caller == agent_id,
             "only the agent may request a spend for itself"
         );
+        self.ensure_migrated();
         require!(
             bound_policy::validate_bounds(0, memo.len(), 0, 0, 0),
             "the memo is outside the allowed bounds"
@@ -560,6 +512,7 @@ impl Bound {
             &RequestMeta {
                 expires_at: now.saturating_add(REQUEST_TTL_SECONDS),
                 reserved_period_start: 0,
+                approval_rate_window_start: 0,
             },
         );
 
@@ -570,7 +523,7 @@ impl Bound {
         self.policies.insert(&agent_id, &policy);
 
         let mut index = self.agent_requests.get(&agent_id).unwrap_or_default();
-        if index.len() == REQUEST_INDEX_CAPACITY {
+        while index.len() >= REQUEST_INDEX_CAPACITY {
             index.remove(0);
         }
         index.push(request_id);
@@ -601,6 +554,7 @@ impl Bound {
     /// more than the budget.
     pub fn approve_request(&mut self, request_id: u64) -> SpendOutcome {
         self.only_owner_or_runner();
+        self.ensure_migrated();
         require!(
             !self.kill_switch,
             "the kill switch is on, no request can be approved"
@@ -704,6 +658,7 @@ impl Bound {
 
         if let Some(mut meta) = self.request_meta_sidecar(request_id) {
             meta.reserved_period_start = period_start;
+            meta.approval_rate_window_start = window_start;
             self.set_request_meta(request_id, &meta);
         } else {
             self.set_request_meta(
@@ -711,6 +666,7 @@ impl Bound {
                 &RequestMeta {
                     expires_at: 0,
                     reserved_period_start: period_start,
+                    approval_rate_window_start: window_start,
                 },
             );
         }
@@ -777,6 +733,7 @@ impl Bound {
         request_id: u64,
         #[callback_result] result: Result<(), PromiseError>,
     ) {
+        self.ensure_migrated();
         let Some(request) = self.requests.get(&request_id) else {
             return;
         };
@@ -803,6 +760,7 @@ impl Bound {
     /// matching receipt.
     pub fn reconcile_request(&mut self, request_id: u64, moved: bool) -> SpendOutcome {
         self.only_owner();
+        self.ensure_migrated();
         let request = self.request(request_id);
         require!(
             request.status == RequestStatus::ApprovedPending,
@@ -824,6 +782,7 @@ impl Bound {
     /// Send a request to a human. The owner and the runner may do this.
     pub fn flag_request(&mut self, request_id: u64, reasons: Vec<String>) -> SpendOutcome {
         self.only_owner_or_runner();
+        self.ensure_migrated();
         let mut request = self.request(request_id);
         require!(
             request.status == RequestStatus::Pending,
@@ -857,6 +816,7 @@ impl Bound {
     /// request. Only the owner may do it for a flagged request.
     pub fn reject_request(&mut self, request_id: u64, reason: String) -> SpendOutcome {
         self.only_owner_or_runner();
+        self.ensure_migrated();
         let mut request = self.request(request_id);
         require!(
             request.status == RequestStatus::Pending
@@ -917,6 +877,7 @@ impl Bound {
     /// a flagged request.
     pub fn expire_request(&mut self, request_id: u64, reason: String) -> SpendOutcome {
         self.only_owner_or_runner();
+        self.ensure_migrated();
         let mut request = self.request(request_id);
         require!(
             request.status == RequestStatus::Pending
@@ -1086,18 +1047,22 @@ impl Bound {
         if limit == 0 {
             return Vec::new();
         }
-        let count = self.retained_receipt_count();
+        let index = self.receipt_index_state();
         let limit = limit.min(MAX_PAGE_SIZE);
         let mut result = Vec::new();
         for ordinal in 0..limit {
-            let index = offset.saturating_add(ordinal);
-            if index >= count {
+            let newest_offset = offset.saturating_add(ordinal);
+            if newest_offset >= index.len {
                 break;
             }
-            let receipt_id = self.next_receipt_id - 1 - index;
-            if let Some(receipt) = self.receipts.get(&receipt_id) {
-                result.push(receipt);
-            }
+            let from_newest = index.len - 1 - newest_offset;
+            let slot = index.start.saturating_add(from_newest);
+            let receipt_id = self.receipt_slot(slot);
+            let receipt = self
+                .receipts
+                .get(&receipt_id)
+                .unwrap_or_else(|| panic!("the receipt index points to a missing receipt"));
+            result.push(receipt);
         }
         result
     }
@@ -1107,26 +1072,22 @@ impl Bound {
         if limit == 0 {
             return Vec::new();
         }
-        let count = self.retained_receipt_count();
+        let index = self.agent_receipt_index_state(&agent_id);
         let limit = limit.min(MAX_PAGE_SIZE);
-        let mut matched = 0u64;
         let mut result = Vec::new();
-        for index in 0..count {
-            let receipt_id = self.next_receipt_id - 1 - index;
-            let Some(receipt) = self.receipts.get(&receipt_id) else {
-                continue;
-            };
-            if receipt.agent_id != agent_id {
-                continue;
-            }
-            if matched < offset {
-                matched += 1;
-                continue;
-            }
-            result.push(receipt);
-            if result.len() as u64 >= limit {
+        for ordinal in 0..limit {
+            let newest_offset = offset.saturating_add(ordinal);
+            if newest_offset >= index.len {
                 break;
             }
+            let from_newest = index.len - 1 - newest_offset;
+            let slot = index.start.saturating_add(from_newest);
+            let receipt_id = self.agent_receipt_slot(&agent_id, slot);
+            let receipt = self
+                .receipts
+                .get(&receipt_id)
+                .unwrap_or_else(|| panic!("the receipt index points to a missing receipt"));
+            result.push(receipt);
         }
         result
     }
@@ -1143,18 +1104,7 @@ impl Bound {
 
     /// How many receipts one agent has.
     pub fn get_agent_receipt_count(&self, agent_id: AccountId) -> u64 {
-        if let Some(count) = self.agent_receipt_count_sidecar(&agent_id) {
-            return count;
-        }
-        let mut count = 0u64;
-        for receipt_id in 0..self.next_receipt_id {
-            if let Some(receipt) = self.receipts.get(&receipt_id) {
-                if receipt.agent_id == agent_id {
-                    count += 1;
-                }
-            }
-        }
-        count
+        self.agent_receipt_index_state(&agent_id).len
     }
 
     /// Whether the owner froze every agent.
@@ -1210,6 +1160,150 @@ impl Bound {
             .unwrap_or_else(|| panic!("no request with that id"))
     }
 
+    /// Require the current sidecar schema before an operation changes the
+    /// request lifecycle.
+    fn ensure_migrated(&self) {
+        let marker = self
+            .schema_marker_sidecar()
+            .unwrap_or_else(|| panic!("the contract state must be migrated before this operation"));
+        require!(
+            marker.version == SCHEMA_VERSION,
+            "the contract state must be migrated before this operation"
+        );
+    }
+
+    fn schema_marker_sidecar(&self) -> Option<SchemaMarker> {
+        env::storage_read(SCHEMA_KEY.as_bytes()).map(|bytes| decode_sidecar(&bytes, "schema"))
+    }
+
+    fn write_schema_marker(&self) {
+        env::storage_write(
+            SCHEMA_KEY.as_bytes(),
+            &encode_sidecar(&SchemaMarker {
+                version: SCHEMA_VERSION,
+            }),
+        );
+    }
+
+    fn migration_progress_sidecar(&self) -> Option<MigrationProgress> {
+        env::storage_read(MIGRATION_PROGRESS_KEY.as_bytes())
+            .map(|bytes| decode_sidecar(&bytes, "migration progress"))
+    }
+
+    fn set_migration_progress(&self, progress: &MigrationProgress) {
+        env::storage_write(MIGRATION_PROGRESS_KEY.as_bytes(), &encode_sidecar(progress));
+    }
+
+    /// Accept the marker written by the earlier unbounded migration, but do
+    /// not treat it as proof that the bounded indexes exist.
+    fn validate_legacy_schema_marker(&self) {
+        let Some(marker) = env::storage_read(LEGACY_SCHEMA_MARKER_KEY) else {
+            return;
+        };
+        require!(
+            marker == vec![LEGACY_SCHEMA_VERSION],
+            "unsupported Certalyn migration schema"
+        );
+    }
+
+    /// Backfill the sidecars for one historical request.
+    ///
+    /// The method is idempotent for the request it handles: the request meta
+    /// sidecar records that the request was counted, so a resumed migration
+    /// never reserves the same amount twice.
+    fn migrate_request(&mut self, request: &Request) {
+        let policy = self.policies.get(&request.agent_id);
+        let mut nonce = self
+            .nonce_state_sidecar(&request.agent_id)
+            .unwrap_or_else(|| {
+                let last_nonce = policy.as_ref().map(|policy| policy.last_nonce).unwrap_or(0);
+                NonceState {
+                    accepted_nonce: last_nonce,
+                    approved_nonce: last_nonce,
+                }
+            });
+        nonce.accepted_nonce = nonce.accepted_nonce.max(request.nonce);
+        if matches!(
+            request.status,
+            RequestStatus::Approved
+                | RequestStatus::ApprovedPending
+                | RequestStatus::SettlementFailed
+        ) {
+            nonce.approved_nonce = nonce.approved_nonce.max(request.nonce);
+        }
+        self.set_nonce_state(&request.agent_id, &nonce);
+
+        let meta_is_new = self.request_meta_sidecar(request.request_id).is_none();
+        let reserved_period = if request.status == RequestStatus::ApprovedPending {
+            policy
+                .as_ref()
+                .map(|policy| policy.period_start)
+                .filter(|period| *period != 0)
+                .unwrap_or(0)
+        } else {
+            0
+        };
+        if meta_is_new {
+            self.set_request_meta(
+                request.request_id,
+                &RequestMeta {
+                    expires_at: request.created_at.saturating_add(REQUEST_TTL_SECONDS),
+                    reserved_period_start: reserved_period,
+                    // The historical layout did not record the rate window.
+                    // Leaving this unknown prevents a late failure from
+                    // refunding a slot in a newer window.
+                    approval_rate_window_start: 0,
+                },
+            );
+        }
+
+        if let Some(policy) = policy.as_ref() {
+            let mut totals = self
+                .period_totals_sidecar(&request.agent_id, policy.period_start)
+                .unwrap_or(PeriodTotals {
+                    settled: policy.spent,
+                    reserved: 0,
+                });
+            if meta_is_new && reserved_period == policy.period_start && reserved_period != 0 {
+                totals.reserved = totals.reserved.saturating_add(request.amount);
+                totals.settled = totals.settled.saturating_sub(request.amount);
+            }
+            self.set_period_totals(&request.agent_id, policy.period_start, &totals);
+        }
+
+        // Rebuild the bounded request index from the requests themselves. The
+        // first request for an agent replaces any unbounded historical vector;
+        // later requests extend it in id order.
+        let mut ids = self
+            .migration_request_index_sidecar(&request.agent_id)
+            .unwrap_or_default();
+        if !ids.contains(&request.request_id) {
+            ids.push(request.request_id);
+        }
+        if ids.len() > REQUEST_INDEX_CAPACITY {
+            let remove = ids.len() - REQUEST_INDEX_CAPACITY;
+            ids.drain(0..remove);
+        }
+        self.set_migration_request_index(&request.agent_id, &ids);
+        self.agent_requests.insert(&request.agent_id, &ids);
+    }
+
+    /// Add one historical receipt to the current bounded indexes.
+    fn migrate_receipt(&mut self, receipt: &Receipt) {
+        self.retain_existing_receipt(receipt);
+    }
+
+    fn migration_request_index_sidecar(&self, agent_id: &AccountId) -> Option<Vec<u64>> {
+        let key = format!("{}{}", MIGRATION_REQUEST_INDEX_PREFIX, agent_id);
+        env::storage_read(key.as_bytes())
+            .map(|bytes| decode_sidecar(&bytes, "migration request index"))
+    }
+
+    fn set_migration_request_index(&self, agent_id: &AccountId, ids: &[u64]) {
+        let key = format!("{}{}", MIGRATION_REQUEST_INDEX_PREFIX, agent_id);
+        env::storage_write(key.as_bytes(), &encode_sidecar(&ids.to_vec()));
+    }
+
     fn reason_bytes(reasons: &[String]) -> usize {
         reasons.iter().map(|reason| reason.len()).sum()
     }
@@ -1251,19 +1345,17 @@ impl Bound {
         let reserved_period = meta
             .map(|meta| meta.reserved_period_start)
             .filter(|period| *period != 0);
+        let approval_rate_window = meta
+            .map(|meta| meta.approval_rate_window_start)
+            .unwrap_or(0);
         let mut policy = self.policies.get(&request.agent_id);
-        if policy.is_none() {
-            evidence.push("the policy was missing when settlement ran".to_string());
-        }
-
-        // `period_usage` is what the period has committed, the money that
-        // moved plus the money held for a transfer that has not settled. The
-        // receipt reports the money that moved, so a receipt never counts a
-        // reservation as a spend.
-        let mut period_usage = 0u128;
-        let mut settled_usage = 0u128;
-        let mut sidecar_accounted = false;
         let mut receipt_period = reserved_period.unwrap_or(0);
+        let mut receipt_totals: Option<PeriodTotals> = None;
+        let mut reservation_adjusted = false;
+
+        // The sidecar is the accounting source. It knows which period owns
+        // the reservation, so settlement never has to guess from the current
+        // policy period.
         if let Some(period) = reserved_period {
             if let Some(mut totals) = self.period_totals_sidecar(&request.agent_id, period) {
                 totals.reserved = totals.reserved.saturating_sub(request.amount);
@@ -1271,62 +1363,93 @@ impl Bound {
                     totals.settled = totals.settled.saturating_add(request.amount);
                 }
                 self.set_period_totals(&request.agent_id, period, &totals);
-                period_usage = totals.used();
-                settled_usage = totals.settled;
-                sidecar_accounted = true;
+                receipt_period = period;
+                receipt_totals = Some(totals);
+                reservation_adjusted = true;
+            } else {
+                evidence.push(
+                    "the reservation period accounting sidecar was missing when settlement ran"
+                        .to_string(),
+                );
             }
         }
 
         if let Some(policy) = policy.as_mut() {
-            if receipt_period == 0 {
-                receipt_period = policy.period_start;
-            }
             let (current_period, mut current_totals) =
                 self.prepare_current_period(&request.agent_id, policy, now);
-            if !sidecar_accounted && !moved && receipt_period == current_period {
-                current_totals.settled = current_totals.settled.saturating_sub(request.amount);
-                self.set_period_totals(&request.agent_id, current_period, &current_totals);
-                period_usage = current_totals.used();
-                settled_usage = current_totals.settled;
-            } else if !sidecar_accounted {
-                period_usage = current_totals.used();
-                settled_usage = current_totals.settled;
-            }
             if receipt_period == 0 {
                 receipt_period = current_period;
             }
 
-            if !moved {
-                let (window_start, count) = bound_policy::rate_window(policy, now);
-                if window_start == policy.rate_window_start {
-                    policy.rate_count = count.saturating_sub(1);
-                } else {
-                    policy.rate_window_start = window_start;
-                    policy.rate_count = 0;
+            if receipt_totals.is_none() && receipt_period == current_period {
+                if !reservation_adjusted {
+                    if moved {
+                        // Legacy `Policy::spent` included the reservation, so
+                        // its settled total already contains this transfer.
+                    } else {
+                        // The old layout had only one total. Release the
+                        // failed amount from it without calling it settled.
+                        let from_reserved = current_totals.reserved.min(request.amount);
+                        current_totals.reserved -= from_reserved;
+                        let from_settled = request.amount.saturating_sub(from_reserved);
+                        current_totals.settled =
+                            current_totals.settled.saturating_sub(from_settled);
+                    }
+                    self.set_period_totals(&request.agent_id, current_period, &current_totals);
+                }
+                receipt_totals = Some(current_totals);
+            } else if receipt_totals.is_none() {
+                evidence.push(
+                    "the settled and reserved totals for the reservation period are unavailable"
+                        .to_string(),
+                );
+                receipt_totals = Some(PeriodTotals {
+                    settled: 0,
+                    reserved: 0,
+                });
+            }
+
+            if !moved && approval_rate_window != 0 {
+                let (current_window, _) = bound_policy::rate_window(policy, now);
+                if approval_rate_window == policy.rate_window_start
+                    && approval_rate_window == current_window
+                {
+                    policy.rate_count = policy.rate_count.saturating_sub(1);
                 }
             }
             policy.period_start = current_period;
             policy.spent = current_totals.used();
             self.policies.insert(&request.agent_id, policy);
-        }
-
-        if receipt_period == 0 {
-            receipt_period = reserved_period.unwrap_or(now);
-        }
-        if sidecar_accounted && period_usage == 0 {
-            if let Some(totals) = self.period_totals_sidecar(&request.agent_id, receipt_period) {
-                period_usage = totals.used();
-                settled_usage = totals.settled;
+        } else {
+            evidence.push("the policy was missing when settlement ran".to_string());
+            evidence.push(
+                "the remaining budget could not be checked because the policy was missing"
+                    .to_string(),
+            );
+            if receipt_period == 0 {
+                receipt_period = now;
+            }
+            if receipt_totals.is_none() {
+                receipt_totals = Some(PeriodTotals {
+                    settled: 0,
+                    reserved: 0,
+                });
             }
         }
-        if settled_usage == 0 && period_usage > 0 {
-            settled_usage = period_usage;
-        }
 
+        let receipt_totals = receipt_totals.unwrap_or(PeriodTotals {
+            settled: 0,
+            reserved: 0,
+        });
+        let settled_usage = receipt_totals.settled;
+        let reserved_usage = receipt_totals.reserved;
         let remaining = match policy.as_ref() {
-            Some(policy) => policy.budget.saturating_sub(settled_usage),
+            Some(policy) => policy.budget.saturating_sub(receipt_totals.used()),
             None => u128::MAX,
         };
+        evidence.push(format!("settled total {} yoctoNEAR", settled_usage));
+        evidence.push(format!("reserved total {} yoctoNEAR", reserved_usage));
+
         let (status, outcome, reason, rule) = if moved {
             (
                 RequestStatus::Approved,
@@ -1400,6 +1523,10 @@ impl Bound {
     /// Deny an approval when the agent's policy no longer exists.
     fn deny_missing_policy(&mut self, request_id: u64, mut request: Request) -> SpendOutcome {
         request.status = RequestStatus::Denied;
+        let evidence = vec![
+            "the policy was missing when approval ran".to_string(),
+            "no budget total could be checked".to_string(),
+        ];
         let receipt = self.write_receipt(
             &request.agent_id,
             &request.vendor,
@@ -1410,7 +1537,7 @@ impl Bound {
             Outcome::Denied,
             "PolicyMissing",
             "the policy for this agent no longer exists",
-            &[],
+            &evidence,
             0,
             0,
             u128::MAX,
@@ -1422,7 +1549,7 @@ impl Bound {
             approved: false,
             reason: "PolicyMissing".to_string(),
             rule: "the policy for this agent no longer exists".to_string(),
-            evidence: Vec::new(),
+            evidence,
             spent: 0,
             remaining: u128::MAX,
         }
@@ -1463,6 +1590,9 @@ impl Bound {
         };
         policy.period_start = period_start;
         policy.spent = totals.used();
+        // Persist the canonical rolled period even when the caller goes on to
+        // deny the request. A denial must not leave the old period active.
+        self.policies.insert(agent_id, policy);
         (period_start, totals)
     }
 
@@ -1537,22 +1667,127 @@ impl Bound {
         env::storage_write(key.as_bytes(), &encode_sidecar(meta));
     }
 
+    /// The retained global receipt index.
+    fn receipt_index_state(&self) -> ReceiptIndexState {
+        env::storage_read(RECEIPT_INDEX_KEY.as_bytes())
+            .map(|bytes| decode_sidecar(&bytes, "receipt index"))
+            .unwrap_or_else(ReceiptIndexState::empty)
+    }
+
+    fn set_receipt_index_state(&self, state: &ReceiptIndexState) {
+        env::storage_write(RECEIPT_INDEX_KEY.as_bytes(), &encode_sidecar(state));
+    }
+
+    fn receipt_slot(&self, slot: u64) -> u64 {
+        let key = format!("{}{}", RECEIPT_SLOT_PREFIX, slot);
+        let bytes = env::storage_read(key.as_bytes())
+            .unwrap_or_else(|| panic!("the receipt index points to a missing slot"));
+        decode_sidecar(&bytes, "receipt slot")
+    }
+
+    fn set_receipt_slot(&self, slot: u64, receipt_id: u64) {
+        let key = format!("{}{}", RECEIPT_SLOT_PREFIX, slot);
+        env::storage_write(key.as_bytes(), &encode_sidecar(&receipt_id));
+    }
+
+    fn remove_receipt_slot(&self, slot: u64) {
+        let key = format!("{}{}", RECEIPT_SLOT_PREFIX, slot);
+        env::storage_remove(key.as_bytes());
+    }
+
+    /// The retained receipt index for one agent.
+    fn agent_receipt_index_state(&self, agent_id: &AccountId) -> ReceiptIndexState {
+        let key = format!("{}{}", AGENT_RECEIPT_INDEX_PREFIX, agent_id);
+        env::storage_read(key.as_bytes())
+            .map(|bytes| decode_sidecar(&bytes, "agent receipt index"))
+            .unwrap_or_else(ReceiptIndexState::empty)
+    }
+
+    fn set_agent_receipt_index_state(&self, agent_id: &AccountId, state: &ReceiptIndexState) {
+        let key = format!("{}{}", AGENT_RECEIPT_INDEX_PREFIX, agent_id);
+        env::storage_write(key.as_bytes(), &encode_sidecar(state));
+    }
+
+    fn agent_receipt_slot(&self, agent_id: &AccountId, slot: u64) -> u64 {
+        let key = format!("{}{}:{}", AGENT_RECEIPT_SLOT_PREFIX, agent_id, slot);
+        let bytes = env::storage_read(key.as_bytes())
+            .unwrap_or_else(|| panic!("the agent receipt index points to a missing slot"));
+        decode_sidecar(&bytes, "agent receipt slot")
+    }
+
+    fn set_agent_receipt_slot(&self, agent_id: &AccountId, slot: u64, receipt_id: u64) {
+        let key = format!("{}{}:{}", AGENT_RECEIPT_SLOT_PREFIX, agent_id, slot);
+        env::storage_write(key.as_bytes(), &encode_sidecar(&receipt_id));
+    }
+
+    fn remove_agent_receipt_slot(&self, agent_id: &AccountId, slot: u64) {
+        let key = format!("{}{}:{}", AGENT_RECEIPT_SLOT_PREFIX, agent_id, slot);
+        env::storage_remove(key.as_bytes());
+    }
+
     fn retained_receipt_count(&self) -> u64 {
-        read_u64_sidecar(RECEIPT_COUNT_KEY.as_bytes()).unwrap_or(self.next_receipt_id)
+        self.receipt_index_state().len
     }
 
-    fn set_receipt_count(&self, count: u64) {
-        env::storage_write(RECEIPT_COUNT_KEY.as_bytes(), &encode_sidecar(&count));
+    /// Append one receipt id to the global and per-agent indexes.
+    fn append_receipt_to_indexes(&mut self, receipt_id: u64, agent_id: &AccountId) {
+        let mut global = self.receipt_index_state();
+        let global_slot = global.end();
+        self.set_receipt_slot(global_slot, receipt_id);
+        global.len = global.len.saturating_add(1);
+        self.set_receipt_index_state(&global);
+
+        let mut agent = self.agent_receipt_index_state(agent_id);
+        let agent_slot = agent.end();
+        self.set_agent_receipt_slot(agent_id, agent_slot, receipt_id);
+        agent.len = agent.len.saturating_add(1);
+        self.set_agent_receipt_index_state(agent_id, &agent);
     }
 
-    fn agent_receipt_count_sidecar(&self, agent_id: &AccountId) -> Option<u64> {
-        let key = format!("{}{}", AGENT_RECEIPT_COUNT_PREFIX, agent_id);
-        read_u64_sidecar(key.as_bytes())
+    /// Remove the oldest retained receipt and its index entries.
+    ///
+    /// The oldest global receipt is also the oldest retained receipt of its
+    /// agent, so both indexes can be advanced without a history scan.
+    fn prune_oldest_receipt(&mut self) {
+        let mut global = self.receipt_index_state();
+        if global.len == 0 {
+            return;
+        }
+        let global_slot = global.start;
+        let receipt_id = self.receipt_slot(global_slot);
+        let receipt = self
+            .receipts
+            .get(&receipt_id)
+            .unwrap_or_else(|| panic!("the receipt index points to a missing receipt"));
+
+        let mut agent = self.agent_receipt_index_state(&receipt.agent_id);
+        if agent.len == 0 {
+            panic!("the agent receipt index is missing a receipt");
+        }
+        let agent_slot = agent.start;
+        let indexed_id = self.agent_receipt_slot(&receipt.agent_id, agent_slot);
+        if indexed_id != receipt_id {
+            panic!("the receipt indexes disagree about the oldest receipt");
+        }
+        self.remove_agent_receipt_slot(&receipt.agent_id, agent_slot);
+        agent.start = agent.start.saturating_add(1);
+        agent.len = agent.len.saturating_sub(1);
+        self.set_agent_receipt_index_state(&receipt.agent_id, &agent);
+
+        self.receipts.remove(&receipt_id);
+        self.remove_receipt_slot(global_slot);
+        global.start = global.start.saturating_add(1);
+        global.len = global.len.saturating_sub(1);
+        self.set_receipt_index_state(&global);
     }
 
-    fn set_agent_receipt_count(&self, agent_id: &AccountId, count: u64) {
-        let key = format!("{}{}", AGENT_RECEIPT_COUNT_PREFIX, agent_id);
-        env::storage_write(key.as_bytes(), &encode_sidecar(&count));
+    /// Add a receipt that already exists in the frozen state map to the
+    /// current indexes. Migration calls this in bounded batches.
+    fn retain_existing_receipt(&mut self, receipt: &Receipt) {
+        if self.retained_receipt_count() >= RECEIPT_RETENTION_LIMIT {
+            self.prune_oldest_receipt();
+        }
+        self.append_receipt_to_indexes(receipt.receipt_id, &receipt.agent_id);
     }
 
     /// Write the receipt of one decision and retain it within the limit.
@@ -1573,11 +1808,11 @@ impl Bound {
         spent: u128,
         remaining: u128,
     ) -> Receipt {
-        // The count is read before the id moves, so the fallback that uses
-        // `next_receipt_id` counts the receipts that already exist.
-        let receipt_count = self.retained_receipt_count();
         let receipt_id = self.next_receipt_id;
-        self.next_receipt_id += 1;
+        self.next_receipt_id = self
+            .next_receipt_id
+            .checked_add(1)
+            .unwrap_or_else(|| panic!("the receipt id counter overflowed"));
         let receipt = Receipt {
             receipt_id,
             request_id,
@@ -1595,28 +1830,12 @@ impl Bound {
             remaining_after: remaining,
             created_at: now_seconds(),
         };
-        let agent_count = self.get_agent_receipt_count(agent_id.clone());
         self.receipts.insert(&receipt_id, &receipt);
-        self.set_receipt_count(receipt_count + 1);
-        self.set_agent_receipt_count(agent_id, agent_count + 1);
-        self.prune_receipts(RECEIPT_RETENTION_LIMIT);
-        receipt
-    }
-
-    /// Remove the oldest receipts until the retention limit is met.
-    fn prune_receipts(&mut self, limit: u64) {
-        let mut count = self.retained_receipt_count();
-        while count > limit {
-            let oldest_id = self.next_receipt_id - count;
-            if let Some(receipt) = self.receipts.get(&oldest_id) {
-                let agent_id = receipt.agent_id.clone();
-                let agent_count = self.get_agent_receipt_count(agent_id.clone());
-                self.receipts.remove(&oldest_id);
-                self.set_agent_receipt_count(&agent_id, agent_count.saturating_sub(1));
-            }
-            count -= 1;
+        if self.retained_receipt_count() >= RECEIPT_RETENTION_LIMIT {
+            self.prune_oldest_receipt();
         }
-        self.set_receipt_count(count);
+        self.append_receipt_to_indexes(receipt_id, agent_id);
+        receipt
     }
 }
 
@@ -1635,9 +1854,4 @@ fn decode_sidecar<T: BorshDeserialize>(bytes: &[u8], label: &str) -> T {
         Ok(value) => value,
         Err(_) => env::panic_str(&format!("invalid Certalyn {} sidecar", label)),
     }
-}
-
-/// Read one Borsh-encoded `u64` sidecar.
-fn read_u64_sidecar(key: &[u8]) -> Option<u64> {
-    env::storage_read(key).map(|bytes| decode_sidecar(&bytes, "counter"))
 }

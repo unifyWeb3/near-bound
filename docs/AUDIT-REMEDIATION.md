@@ -18,9 +18,9 @@ artifact.
 |---|---------|----------|----------------|-------|--------|
 | 1 | A flagged request could never be approved. `owner_approve_request` delegated to `approve_request`, which requires `Pending`, and a flagged request is `NeedsApproval` | Critical | `approve_request` accepts an open request, and a flagged one requires the owner | `the_owner_can_approve_a_flagged_request`, `the_runner_cannot_approve_a_flagged_request` | Fixed |
 | 2 | The console sent Borsh arguments to a contract that reads JSON, so every browser write failed with a deserialisation error | Critical | `lib/wallet.js` builds a JSON argument object and signs those bytes; the Borsh writer is gone | `wallet arguments are JSON argument objects, not Borsh arrays`, `values above 2^53 survive as strings in the JSON argument object` | Fixed |
-| 3 | The settlement callback walked the whole request history, so it could run out of gas and leave the budget reserved with no way out | Critical | The reservations live in sidecars keyed by agent and period, so the callback is constant time | `the_settlement_is_constant_time_with_a_long_history` | Fixed |
+| 3 | The settlement callback walked the whole request history, so it could run out of gas and leave the budget reserved with no way out | Critical | Settled and reserved totals live in period sidecars and each request records its reservation period, so settlement is constant time | `the_settlement_is_constant_time_with_a_long_history`, `a_failed_reservation_is_reported_separately_from_settled_money` | Fixed |
 | 4 | A request whose callback never arrived stayed `ApprovedPending` for good, with its reservation held | High | `reconcile_request` lets the owner settle it, from the transfer receipt | `the_owner_can_reconcile_a_request_that_never_settled`, `the_owner_can_reconcile_a_request_that_did_move` | Fixed |
-| 5 | A failed payment kept its rate slot | High | The failure branch gives the slot back | `a_failed_payment_gives_the_rate_slot_back` | Fixed |
+| 5 | A failed payment kept its rate slot, and a late failure could remove a newer window's slot | High | Each request records its approval rate-window start; failure refunds only that exact window when it is still current | `a_failed_payment_gives_the_rate_slot_back`, `an_old_rate_window_failure_does_not_refund_a_new_window` | Fixed |
 | 6 | A nonce could be replayed while the first request was still undecided | High | The accepted nonce is tracked per agent, next to the approved nonce | `an_accepted_nonce_cannot_be_replayed`, `an_accepted_nonce_cannot_be_replayed_before_it_is_approved` | Fixed |
 | 7 | The receipt count was one higher than the number of receipts, because the count was read after the id moved | High | The count is read before the id moves | `a_transfer_that_settles_writes_an_approved_receipt` | Fixed |
 | 8 | The console read the whole ledger of every contract to show one agent | High | The contract reads one agent's receipts in pages, and the console falls back to the historical scan when the deployment has no paged view | `getLedger on a paged contract uses the agent page view and reports real denominators` | Fixed |
@@ -38,6 +38,26 @@ artifact.
 | 20 | The judge view quoted one receipt id from the demo deployment for every deployment | Low | The evidence view quotes the newest receipt of the deployment being read | `web/views/judge.js` | Fixed |
 | 21 | The console used `btoa` on JSON, which throws on a character outside Latin-1 | Low | The arguments are encoded from UTF-8 bytes | `toBase64 encodes text outside Latin-1` | Fixed |
 | 22 | The filter callback re-rendered the filters inside their own callback | Low | One callback, used by the shell and by the route | `web/app.js` | Fixed |
+
+## Independent remediation review
+
+A second read-only review of the remediated source found additional contract,
+console, build and documentation defects. They are fixed in this local branch
+and remain undeployed.
+
+| Finding | Severity | Implementation | Check | Status |
+| --- | --- | --- | --- | --- |
+| Legacy state could transact before the new nonce and index sidecars existed | Critical | Fresh state writes a schema marker; request operations require the marker; `migrate` is owner-only, bounded and resumable | `the_migration_marks_the_schema_and_keeps_the_requests`, `the_legacy_migration_is_batched_and_resumable` | Fixed locally |
+| Migration could exceed one transaction and had no genuine legacy fixture | High | The migration stores a versioned cursor and processes 100 ids per phase; tests use the frozen state layout without current sidecars | `the_legacy_migration_is_batched_and_resumable`, `the_legacy_migration_preserves_a_reserved_amount` | Fixed locally |
+| A failed reservation could be reported as settled money | Critical | Settlement reads explicit settled and reserved totals and reports them separately | `a_failed_reservation_is_reported_separately_from_settled_money`, `payments_that_settle_out_of_order_leave_the_right_figures` | Fixed locally |
+| Receipt writes and per-agent counts could scan receipt history | High | Global and per-agent slot indexes make writes and counts independent of retained history | `the_settlement_is_constant_time_with_a_long_history`, `the_receipts_of_one_agent_are_read_in_pages` | Fixed locally |
+| Historical migration did not enforce receipt retention | High | The migration retains the newest 10,000 receipts while building the index | `the_legacy_migration_enforces_the_receipt_retention_limit` | Fixed locally |
+| A denial after period rollover could leave the stored period stale | Medium | The period helper persists the canonical rolled policy on every path | `a_denial_after_a_rollover_persists_the_current_period` | Fixed locally |
+| The request deep link used the wrong state shape and did not cover id zero | High | The view reads `state.requests.items`; the regression covers request zero | `renderRequest reads request id zero from state.requests.items` | Fixed locally |
+| A truncated request queue was reported as complete | Medium | The API preserves the available count and returns `complete: false` beyond the browser cap | `getOpenRequests reports truncation and preserves the available open count` | Fixed locally |
+| The dependency gate could pass after an installation or advisory-fetch failure | Critical | The script fails closed, installs the pinned version with `--locked`, verifies the version and treats fetch failure as fatal | `tests/dependency-check/run.sh` | Fixed locally |
+| The contract test-only VM dependency graph triggered `RUSTSEC-2026-0387` | High | The gate proves the affected crate is absent from the production Wasm graph, then ignores only that exact advisory ID. It does not suppress the crate or any other advisory | `affected crate in the production graph: failed closed`; real dependency gate | Contained locally |
+| Ambient `RUSTFLAGS` and a malformed `CARGO_HOME` changed the Wasm bytes | High | The build script owns canonical flags, requires an absolute Cargo home and verifies the pinned optimizer | `bash scripts/build-wasm.sh`; CI Wasm hash gate | Fixed locally |
 
 ## The remediation of 2026-11-13
 
@@ -58,8 +78,7 @@ artifact.
 
 - No deployment, no push, no submission and no public post. Those need a
   separate yes for that exact action.
-- The contract keeps its receipts forever. The earlier plan to prune them was
-  dropped: a receipt that disappears is a decision that cannot be audited, and
-  the console pages around the problem instead.
+- The remediated source retains a bounded receipt window of 10,000. It does
+  not claim to be a permanent archive.
 - The console has no account, no session and no server. The chain is the
   database.
