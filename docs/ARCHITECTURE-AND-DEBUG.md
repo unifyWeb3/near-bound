@@ -57,11 +57,13 @@ a version and their values use Borsh.
 | --- | --- |
 | `certalyn_nonce_v1:<agent>` | Highest accepted nonce and highest approved nonce, tracked separately |
 | `certalyn_period_v1:<agent>:<period>` | Settled money and reserved money for one budget period |
-| `certalyn_request_meta_v2:<request>` | Expiry, reservation period and approval rate-window start |
-| `certalyn_receipt_index_v2` and receipt slots | Global retained-receipt index |
-| `certalyn_agent_receipt_index_v2:<agent>` and slots | Per-agent receipt index |
-| `certalyn_schema_v2` | Completion marker for the current sidecar schema |
-| `certalyn_migration_v1` | Bounded migration stage and cursor |
+| `certalyn_request_meta_v3:<request>` | Expiry, reservation period, approval rate-window start and the historical flag |
+| `certalyn_receipt_index_v3` and receipt slots | Global retained-receipt index |
+| `certalyn_agent_receipt_index_v3:<agent>` and slots | Per-agent receipt index |
+| `certalyn_schema_v3` | Completion marker for the current sidecar schema |
+| `certalyn_migration_v2` | Bounded migration stage, cursor, the two ends and the count of records that need the owner |
+| `certalyn_legacy_reservation_v1:<request>` | The money of a historical request whose period the owner has to name |
+| `certalyn_legacy_unresolved_v1` | How many historical records still wait for that period |
 
 The compatibility fields in `Policy` mirror the sidecar totals. They are not a
 second accounting source.
@@ -84,10 +86,25 @@ marker and cannot process a request or approval until the owner completes
 `migrate`.
 
 The migration is owner-only, resumable and bounded to 100 historical ids per
-call. It has separate request and receipt phases. The request phase rebuilds
-nonce watermarks, request metadata and the bounded request index. The receipt
-phase builds the global and per-agent indexes while enforcing the 10,000
-receipt limit. The current marker is written only after both phases finish.
+call. It has three phases. The request phase rebuilds nonce watermarks, request
+metadata and the bounded request index, and it records the historical requests
+whose money the new accounting cannot place. The receipt phase builds the
+global and per-agent indexes while enforcing the 10,000 receipt limit, and it
+places the settled money of a historical decision once, in the period its
+receipt recorded. The verification phase compares the reconstructed figures
+with the stored ones and writes the current marker only when they agree.
+
+The historical layout kept one flat spend figure and did not record the period
+a reservation belonged to. The migration therefore does not guess that period.
+It records the amount in `certalyn_legacy_reservation_v1` and leaves the
+period to the owner, who names it with `reconcile_legacy_transfer`. While a
+record is unplaced, the migration does not finish.
+
+A transfer that was in flight when the upgrade landed does not wait for the
+migration. The callback settles a historical request with the historical
+rules, writes the receipt, and places the money in the historical period. A
+callback that fails is not retried by the chain, so a transfer can never be
+left without a receipt.
 
 ## Decision lifecycle
 

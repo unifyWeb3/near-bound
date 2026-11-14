@@ -885,6 +885,15 @@ main {
   border-color: rgba(138, 92, 12, 0.25);
 }
 
+/* A request that was closed without a decision and a receipt that says so.
+   It is neither a refusal nor a payment, so it gets its own quiet tone. */
+.pill.expired {
+  color: var(--muted);
+  background: var(--panel);
+  border-color: var(--line-soft);
+  border-style: dashed;
+}
+
 .receipt {
   margin-top: var(--s3);
   border: 1px solid var(--line-soft);

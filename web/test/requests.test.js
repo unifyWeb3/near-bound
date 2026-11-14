@@ -84,6 +84,52 @@ test('renderRequests shows the available open count when the page is incomplete'
   assert.ok(document.getElementById('requests-view').textContent.includes('cut off'));
 });
 
+test('a queue that was only partly read does not claim that nothing is waiting', () => {
+  const state = {
+    requests: {
+      items: [],
+      owner: 'owner.testnet',
+      runner: 'runner.testnet',
+      errors: 0,
+      failedIds: [],
+      complete: false,
+      fallback: true,
+      total: 0,
+    },
+    wallet: { accountId: 'owner.testnet' },
+    actions: {},
+    deployment: { agent: 'bound-agent.testnet' },
+  };
+  renderRequests(state, () => {});
+  const text = document.getElementById('requests-view').textContent;
+  assert.ok(
+    !text.includes('No request is waiting for the owner.'),
+    'an incomplete queue must not claim the queue is empty',
+  );
+  assert.ok(text.includes('Older requests were not read'));
+});
+
+test('a complete empty queue says so', () => {
+  const state = {
+    requests: {
+      items: [],
+      owner: 'owner.testnet',
+      runner: 'runner.testnet',
+      errors: 0,
+      failedIds: [],
+      complete: true,
+      fallback: false,
+    },
+    wallet: { accountId: 'owner.testnet' },
+    actions: {},
+    deployment: { agent: 'bound-agent.testnet' },
+  };
+  renderRequests(state, () => {});
+  assert.ok(
+    document.getElementById('requests-view').textContent.includes('No request is waiting for the owner.'),
+  );
+});
+
 test('renderRequests lists exact failed request ids', () => {
   const state = {
     requests: {
@@ -125,4 +171,49 @@ test('renderRequest reads request id zero from state.requests.items', async () =
   assert.ok(text.includes('request #0'));
   assert.ok(text.includes('vendor.testnet'));
   assert.ok(text.includes('the first request'));
+});
+
+test('the approval confirmation does not promise a receipt before the transfer settles', () => {
+  const state = {
+    requests: {
+      items: [{
+        request_id: 7,
+        status: 'Pending',
+        agent_id: 'bound-agent.testnet',
+        vendor: 'vendor.testnet',
+        amount: '1',
+        nonce: 1,
+        created_at: String(now - 10),
+      }],
+      owner: 'owner.testnet',
+      runner: 'runner.testnet',
+      errors: 0,
+      failedIds: [],
+      complete: true,
+      fallback: false,
+    },
+    wallet: { accountId: 'owner.testnet' },
+    actions: {},
+    owner: 'owner.testnet',
+    runner: 'runner.testnet',
+    deployment: { agent: 'bound-agent.testnet' },
+  };
+  renderRequests(state, () => {});
+
+  const cards = document.getElementById('requests-view').children;
+  const approve = cards
+    .flatMap((card) => card.children)
+    .flatMap((child) => child.children || [])
+    .find((child) => child.tagName === 'BUTTON' && child._text === 'Approve');
+  assert.ok(approve, 'the owner sees the approve button');
+
+  approve.click();
+  const panel = document.body.children[0];
+  const text = panel.textContent;
+  assert.ok(text.includes('reserves the budget'), text);
+  assert.ok(
+    !text.includes('writes an Approved receipt'),
+    'the receipt is only written when the transfer settles',
+  );
+  assert.ok(text.includes('Approved if the money moved'), text);
 });

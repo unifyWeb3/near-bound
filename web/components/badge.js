@@ -8,6 +8,7 @@ const OUTCOMES = {
   Approved: 'approved',
   Denied: 'denied',
   Failed: 'failed',
+  Expired: 'expired',
 };
 
 const STATES = {
@@ -17,6 +18,7 @@ const STATES = {
   Approved: 'approved',
   SettlementFailed: 'failed',
   Denied: 'denied',
+  Expired: 'expired',
 };
 
 /**
@@ -56,6 +58,8 @@ export function stateWords(status) {
       return 'The transfer failed';
     case 'Denied':
       return 'Refused by the policy';
+    case 'Expired':
+      return 'Expired, nothing moved';
     default:
       return status;
   }

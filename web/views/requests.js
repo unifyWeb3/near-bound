@@ -77,7 +77,10 @@ export function renderRequests(state, act) {
   if (countNode) {
     const oldest = oldestOpenAge(open, now);
     const availableOpen = openCount ?? open.length;
-    countNode.textContent = `${availableOpen} open${oldest ? ` · oldest opened ${oldest} ago` : ''}`;
+    // When the queue could not be read in full, the count is what was found,
+    // not the number of open requests. It says so.
+    const counted = complete ? `${availableOpen} open` : `${availableOpen} open found`;
+    countNode.textContent = `${counted}${oldest ? ` · oldest opened ${oldest} ago` : ''}`;
   }
 
   const nodes = [];
@@ -93,14 +96,31 @@ export function renderRequests(state, act) {
   }
 
   if (open.length === 0) {
-    nodes.push(emptyState('No request is waiting for the owner.'));
+    // A queue that was only partly read cannot claim that nothing is waiting.
+    nodes.push(
+      emptyState(
+        complete
+          ? 'No request is waiting for the owner.'
+          : 'No open request was found in the part of the queue that could be read. Older requests were not read, so an older open request may still be waiting.',
+      ),
+    );
   } else {
     const header = el('p', 'muted small');
-    header.textContent = fallback
-      ? 'Reading requests one at a time (the deployed contract predates the paged request view).'
-      : complete
-        ? 'Every open request of this agent.'
-        : 'The request list was cut off after the most recent open requests.';
+    const notes = [];
+    if (fallback) {
+      notes.push(
+        'Reading requests one at a time (the deployed contract predates the paged request view).',
+      );
+    }
+    if (!complete) {
+      notes.push(
+        'The queue was cut off after the most recent requests, so an older open request may not be shown.',
+      );
+    }
+    if (notes.length === 0) {
+      notes.push('Every open request of this agent.');
+    }
+    header.textContent = notes.join(' ');
     nodes.push(header);
 
     for (const request of [...expired, ...actionable]) {
@@ -180,7 +200,8 @@ function requestCard(request, now, act, state) {
           requestId: request.request_id,
           amount: formatNear(request.amount),
           vendor: request.vendor,
-          consequence: 'The contract pays the vendor and writes an Approved receipt.',
+          consequence:
+            'The contract reserves the budget and sends the transfer. The receipt is written when the transfer settles: Approved if the money moved, Failed if it did not.',
           action: 'approve',
           onConfirm: () => act(request.request_id, 'approve', ''),
         });

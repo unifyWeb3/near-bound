@@ -121,8 +121,48 @@ class FakeElement {
 
   focus() {}
   blur() {}
-  querySelectorAll() {
-    return [];
+
+  matches(selector) {
+    return String(selector)
+      .split(',')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .some((part) => {
+        // A selector this shim does not understand matches nothing, the way
+        // an unknown selector behaves in the browser tests.
+        if (/[:>\s]/.test(part)) return false;
+        let rest = part;
+        const tag = rest.match(/^[a-zA-Z][\w-]*/);
+        if (tag) {
+          if (this.tagName !== tag[0].toUpperCase()) return false;
+          rest = rest.slice(tag[0].length);
+        }
+        const classes = rest.match(/\.[\w-]+/g) || [];
+        if (rest.replace(/\.[\w-]+/g, '') !== '') return false;
+        return classes.every((name) => this.classes.contains(name.slice(1)));
+      });
+  }
+
+  querySelector(selector) {
+    for (const child of this.children) {
+      if (typeof child.matches === 'function' && child.matches(selector)) return child;
+      if (typeof child.querySelector === 'function') {
+        const found = child.querySelector(selector);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  querySelectorAll(selector) {
+    const found = [];
+    for (const child of this.children) {
+      if (typeof child.matches === 'function' && child.matches(selector)) found.push(child);
+      if (typeof child.querySelectorAll === 'function') {
+        found.push(...child.querySelectorAll(selector));
+      }
+    }
+    return found;
   }
 
   remove() {

@@ -422,15 +422,24 @@ def evidence_section(data):
 
 
 def write_evidence(data):
+    """Write the README's evidence table.
+
+    The markers are required. A README without them would lose the table
+    silently, and the README points at it, so the generator stops instead of
+    reporting success while the table is missing.
+    """
     path = os.path.join(ROOT, "README.md")
     if not os.path.exists(path):
-        return False
+        raise SystemExit("README.md is missing, the evidence table cannot be written")
     with open(path, "r", encoding="utf-8") as handle:
         text = handle.read()
     start = "<!-- evidence:start -->"
     end = "<!-- evidence:end -->"
     if start not in text or end not in text:
-        return False
+        raise SystemExit(
+            "README.md has no evidence markers, so the evidence table cannot be written. "
+            f"Add {start} and {end} around the table."
+        )
     head, rest = text.split(start, 1)
     _, tail = rest.split(end, 1)
     with open(path, "w", encoding="utf-8") as handle:

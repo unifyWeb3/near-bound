@@ -11,10 +11,10 @@ permissions:
 env:
   # The Rust toolchain is pinned in rust-toolchain.toml (1.99.1). The same
   # toolchain is used for policy and contract so the wasm build is reproducible.
+  # scripts/build-wasm.sh owns RUSTFLAGS because its canonical source and
+  # registry remaps must be identical on developer machines and in CI.
   CARGO_HOME: /home/runner/.audit-cargo
-  RUSTFLAGS: >-
-    --remap-path-prefix=$GITHUB_WORKSPACE=repo
-    --remap-path-prefix=$CARGO_HOME/registry/src/index.crates.io-1949cf8c6b5b557f=registry
+  CARGO_INCREMENTAL: "0"
 
 jobs:
   policy:
@@ -79,6 +79,7 @@ jobs:
           "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION/shellcheck" --version
           "$RUNNER_TEMP/shellcheck-$SHELLCHECK_VERSION/shellcheck" \
             demo/agent.sh \
+            demo/nonce.sh \
             demo/protocol_arm.sh \
             scripts/build-wasm.sh \
             scripts/dependency-check.sh \

@@ -76,11 +76,10 @@ export function enableSteps(names) {
     },
     {
       title: 'Build and deploy the policy contract',
-      body: 'Built locally from the repository and deployed to the owner account. The wasm path is the release build output; wasm-opt shrinks it exactly as the Makefile does.',
+      body: 'The build is pinned: the repository script uses Rust 1.99.1 and Binaryen 133, builds the contract twice and deploys only the artifact whose SHA-256 matches on both builds. The wasm path is that verified release build output.',
       cmd: [
-        `cargo build --release --locked --target wasm32-unknown-unknown --manifest-path contract/Cargo.toml`,
-        `wasm-opt -Oz --enable-nontrapping-float-to-int --enable-bulk-memory contract/target/wasm32-unknown-unknown/release/bound_contract.wasm -o contract/bound_contract.wasm`,
-        `near contract deploy ${contract} use-file contract/bound_contract.wasm with-init-call new json-args '{}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send`,
+        'scripts/build-wasm.sh',
+        `near contract deploy ${contract} use-file contract/target/wasm32-unknown-unknown/release/bound_contract.wasm with-init-call new json-args '{}' prepaid-gas '100.0 Tgas' attached-deposit '0 NEAR' network-config testnet sign-with-legacy-keychain send`,
       ].join('\n'),
     },
     {
@@ -127,7 +126,9 @@ export function renderEnable(state, update) {
   state.enableNames = names;
 
   const form = document.getElementById('enable-names');
-  if (form) {
+  // The name fields are built once. Remounting them on every keystroke
+  // would take the caret away from the field being typed in.
+  if (form && !form.certalynNamesMounted) {
     const fields = [
       ['contract', 'Owner and treasury account'],
       ['agent', 'Agent account'],
@@ -143,6 +144,7 @@ export function renderEnable(state, update) {
       }).wrapper,
     );
     mount(form, ...fields);
+    form.certalynNamesMounted = true;
   }
 
   const host = document.getElementById('steps');

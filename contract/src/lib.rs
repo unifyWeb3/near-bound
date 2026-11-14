@@ -24,7 +24,8 @@ mod tests;
 pub use bound_policy::Evaluation;
 pub use bound_policy::Policy;
 pub use types::{
-    MigrationProgress, NonceState, Outcome, PeriodTotals, PolicyView, Receipt, ReceiptIndexState,
+    LegacyReconciliation, LegacyReconciliationView, LegacyReservation, MigrationProgress,
+    MigrationStatus, NonceState, Outcome, PeriodTotals, PolicyView, Receipt, ReceiptIndexState,
     Request, RequestMeta, RequestStatus, RequestView, SchemaMarker, SpendOutcome,
 };
 
@@ -47,6 +48,12 @@ const REQUEST_INDEX_CAPACITY: usize = 256;
 /// The most receipts kept by the contract.
 const RECEIPT_RETENTION_LIMIT: u64 = 10_000;
 
+/// How many receipts one read walks before it gives up.
+///
+/// Before the migration the receipts are read straight from the frozen state
+/// map, because the bounded indexes are built by the migration itself.
+const LEGACY_RECEIPT_SCAN_LIMIT: u64 = 1_000;
+
 /// The longest policy period accepted, in seconds (one year).
 const MAX_PERIOD_SECONDS: u64 = 31_536_000;
 
@@ -54,44 +61,59 @@ const MAX_PERIOD_SECONDS: u64 = 31_536_000;
 const MAX_RATE_LIMIT: u64 = 10_000;
 
 /// The versioned completion marker for the current sidecar schema.
-const SCHEMA_KEY: &str = "certalyn_schema_v2";
+const SCHEMA_KEY: &str = "certalyn_schema_v3";
 
 /// The marker written by the earlier, unbounded migration implementation.
 ///
-/// It is deliberately not treated as current: a state carrying only this key
-/// still has to pass through the bounded migration below.
+/// That layout used different request metadata and accounting sidecars. It is
+/// not compatible with the current schema, so a state carrying this key is
+/// refused instead of being decoded with the wrong assumptions.
 const LEGACY_SCHEMA_MARKER_KEY: &[u8] = b"certalyn_schema";
 
-/// The schema version written by the earlier, unbounded migration code.
-///
-/// A state with this marker still has to pass through the bounded migration
-/// because the earlier implementation did not build the current indexes.
-const LEGACY_SCHEMA_VERSION: u8 = 3;
-
 /// The persisted cursor for the bounded migration.
-const MIGRATION_PROGRESS_KEY: &str = "certalyn_migration_v1";
+const MIGRATION_PROGRESS_KEY: &str = "certalyn_migration_v2";
 
 /// The schema version this build writes.
-const SCHEMA_VERSION: u8 = 4;
+const SCHEMA_VERSION: u8 = 5;
 
 /// The largest number of legacy ids inspected by one migration call.
 const MIGRATION_BATCH_SIZE: u64 = 100;
 
-/// The migration stages. The values are part of the version-1 progress
-/// sidecar format.
-const MIGRATION_STAGE_REQUESTS: u8 = 0;
-const MIGRATION_STAGE_RECEIPTS: u8 = 1;
-const MIGRATION_STAGE_COMPLETE: u8 = 2;
-
 /// The sidecar key prefixes. Each format is versioned.
 const NONCE_PREFIX: &str = "certalyn_nonce_v1:";
 const PERIOD_PREFIX: &str = "certalyn_period_v1:";
-const REQUEST_META_PREFIX: &str = "certalyn_request_meta_v2:";
-const RECEIPT_INDEX_KEY: &str = "certalyn_receipt_index_v2";
-const RECEIPT_SLOT_PREFIX: &str = "certalyn_receipt_slot_v2:";
-const AGENT_RECEIPT_INDEX_PREFIX: &str = "certalyn_agent_receipt_index_v2:";
-const AGENT_RECEIPT_SLOT_PREFIX: &str = "certalyn_agent_receipt_slot_v2:";
+const REQUEST_META_PREFIX: &str = "certalyn_request_meta_v3:";
+const RECEIPT_INDEX_KEY: &str = "certalyn_receipt_index_v3";
+const RECEIPT_SLOT_PREFIX: &str = "certalyn_receipt_slot_v3:";
+const AGENT_RECEIPT_INDEX_PREFIX: &str = "certalyn_agent_receipt_index_v3:";
+const AGENT_RECEIPT_SLOT_PREFIX: &str = "certalyn_agent_receipt_slot_v3:";
 const MIGRATION_REQUEST_INDEX_PREFIX: &str = "certalyn_migration_request_index_v1:";
+/// The money of the historical requests that the new accounting has to place.
+const LEGACY_RESERVATION_PREFIX: &str = "certalyn_legacy_reservation_v1:";
+/// How many historical records still need the owner to name a period.
+const LEGACY_UNRESOLVED_KEY: &str = "certalyn_legacy_unresolved_v1";
+/// The agents the migration found, so their figures can be checked.
+const MIGRATION_AGENT_PREFIX: &str = "certalyn_migration_agent_v1:";
+
+/// The migration stages. The values are part of the version-2 progress
+/// sidecar format.
+const MIGRATION_STAGE_REQUESTS: u8 = 0;
+const MIGRATION_STAGE_RECEIPTS: u8 = 1;
+const MIGRATION_STAGE_VERIFY: u8 = 2;
+const MIGRATION_STAGE_COMPLETE: u8 = 3;
+
+/// The most agents one migration checks the figures of.
+///
+/// The figure check reads the stored policy of every agent the migration
+/// found, so the list of agents has to stay bounded.
+const MIGRATION_AGENT_LIMIT: usize = 64;
+
+/// A timestamp above this value was written in nanoseconds.
+///
+/// The earliest contract wrote the block timestamp into the period field
+/// without converting it, so a period can be a nanosecond value. A period in
+/// seconds is below this value, and a period in nanoseconds is above it.
+const SECONDS_TIMESTAMP_LIMIT: u64 = 1_000_000_000_000;
 
 /// The current time in seconds.
 ///
@@ -101,6 +123,31 @@ const MIGRATION_REQUEST_INDEX_PREFIX: &str = "certalyn_migration_request_index_v
 /// is in seconds.
 fn now_seconds() -> u64 {
     env::block_timestamp() / 1_000_000_000
+}
+
+/// A timestamp that was written in nanoseconds, read back in seconds.
+///
+/// The earliest contract wrote the block timestamp into the period and the
+/// created field without converting it. A value this large is a nanosecond
+/// timestamp, and a period or a time that large would never come round again,
+/// so it is converted rather than thrown away.
+fn normalize_timestamp(value: u64) -> u64 {
+    if value > SECONDS_TIMESTAMP_LIMIT {
+        value / 1_000_000_000
+    } else {
+        value
+    }
+}
+
+/// A period that was written in nanoseconds, read back in seconds.
+///
+/// The unit is the same as in `normalize_timestamp`. A period of zero means
+/// the period is not known, and it is left alone.
+fn normalize_period(value: u64) -> u64 {
+    if value == 0 {
+        return 0;
+    }
+    normalize_timestamp(value)
 }
 
 /// The contract state.
@@ -179,54 +226,100 @@ impl Bound {
             }
             env::panic_str("unsupported Certalyn migration schema");
         }
-        self.validate_legacy_schema_marker();
+        if env::storage_read(LEGACY_SCHEMA_MARKER_KEY).is_some() {
+            env::panic_str("unsupported Certalyn migration schema");
+        }
 
         let mut progress = self
             .migration_progress_sidecar()
             .unwrap_or(MigrationProgress {
                 stage: MIGRATION_STAGE_REQUESTS,
                 cursor: 0,
+                request_end: self.next_request_id,
+                // No receipt is indexed yet. The counter is how far the
+                // migration has read, not how many receipts exist.
+                receipt_end: 0,
+                unresolved: 0,
             });
 
-        match progress.stage {
-            MIGRATION_STAGE_REQUESTS => {
-                let end = self
-                    .next_request_id
-                    .min(progress.cursor.saturating_add(MIGRATION_BATCH_SIZE));
-                while progress.cursor < end {
-                    if let Some(request) = self.requests.get(&progress.cursor) {
-                        self.migrate_request(&request);
+        // One call inspects a bounded number of ids. A stage that has nothing
+        // left to inspect hands over to the next one straight away, so a
+        // small contract finishes in a single call.
+        let mut budget = MIGRATION_BATCH_SIZE;
+        loop {
+            match progress.stage {
+                MIGRATION_STAGE_REQUESTS => {
+                    if budget == 0 {
+                        break;
                     }
-                    progress.cursor += 1;
-                }
-                if progress.cursor >= self.next_request_id {
-                    progress.stage = MIGRATION_STAGE_RECEIPTS;
-                    progress.cursor = 0;
-                }
-            }
-            MIGRATION_STAGE_RECEIPTS => {
-                let end = self
-                    .next_receipt_id
-                    .min(progress.cursor.saturating_add(MIGRATION_BATCH_SIZE));
-                while progress.cursor < end {
-                    if let Some(receipt) = self.receipts.get(&progress.cursor) {
-                        self.migrate_receipt(&receipt);
+                    let end = progress
+                        .request_end
+                        .min(progress.cursor.saturating_add(budget));
+                    let done = progress.cursor;
+                    while progress.cursor < end {
+                        if let Some(request) = self.requests.get(&progress.cursor) {
+                            self.migrate_request(&request);
+                        }
+                        progress.cursor += 1;
                     }
-                    progress.cursor += 1;
+                    budget -= progress.cursor - done;
+                    if progress.cursor >= progress.request_end {
+                        progress.stage = MIGRATION_STAGE_RECEIPTS;
+                        progress.cursor = 0;
+                        continue;
+                    }
+                    break;
                 }
-                if progress.cursor >= self.next_receipt_id {
-                    progress.stage = MIGRATION_STAGE_COMPLETE;
-                    progress.cursor = 0;
+                MIGRATION_STAGE_RECEIPTS => {
+                    if budget == 0 {
+                        break;
+                    }
+                    let end = self
+                        .next_receipt_id
+                        .min(progress.receipt_end.saturating_add(budget));
+                    let done = progress.receipt_end;
+                    while progress.receipt_end < end {
+                        if let Some(receipt) = self.receipts.get(&progress.receipt_end) {
+                            self.migrate_receipt(&receipt);
+                        }
+                        progress.receipt_end += 1;
+                    }
+                    budget -= progress.receipt_end - done;
+                    if progress.receipt_end >= self.next_receipt_id {
+                        progress.stage = MIGRATION_STAGE_VERIFY;
+                        progress.cursor = 0;
+                        continue;
+                    }
+                    break;
                 }
+                MIGRATION_STAGE_VERIFY => {
+                    // A receipt written while the migration was running still
+                    // has to be indexed, so the check goes back to that phase.
+                    if progress.receipt_end < self.next_receipt_id {
+                        progress.stage = MIGRATION_STAGE_RECEIPTS;
+                        continue;
+                    }
+                    if self.legacy_figures_match() && self.unresolved_legacy_records() == 0 {
+                        progress.stage = MIGRATION_STAGE_COMPLETE;
+                        progress.cursor = 0;
+                    }
+                    break;
+                }
+                MIGRATION_STAGE_COMPLETE => break,
+                _ => env::panic_str("invalid Certalyn migration progress"),
             }
-            MIGRATION_STAGE_COMPLETE => {}
-            _ => env::panic_str("invalid Certalyn migration progress"),
         }
 
+        progress.unresolved = self.unresolved_legacy_records();
         self.set_migration_progress(&progress);
         if progress.stage == MIGRATION_STAGE_COMPLETE {
             self.write_schema_marker();
             env::log_str("MigrationApplied");
+        } else if progress.stage == MIGRATION_STAGE_VERIFY {
+            env::log_str(&format!(
+                "MigrationNeedsOwner unresolved {}",
+                progress.unresolved
+            ));
         } else {
             env::log_str(&format!(
                 "MigrationProgress stage {} cursor {}",
@@ -513,6 +606,7 @@ impl Bound {
                 expires_at: now.saturating_add(REQUEST_TTL_SECONDS),
                 reserved_period_start: 0,
                 approval_rate_window_start: 0,
+                legacy: false,
             },
         );
 
@@ -566,6 +660,13 @@ impl Bound {
                 RequestStatus::Pending | RequestStatus::NeedsApproval
             ),
             "only an open request can be approved"
+        );
+        // The agent may not approve its own spend, not even when the agent is
+        // also the owner or the runner. The counterparty has to be somebody
+        // else.
+        require!(
+            env::predecessor_account_id() != request.agent_id,
+            "the agent cannot approve its own request"
         );
         if request.status == RequestStatus::NeedsApproval {
             self.only_owner();
@@ -667,6 +768,7 @@ impl Bound {
                     expires_at: 0,
                     reserved_period_start: period_start,
                     approval_rate_window_start: window_start,
+                    legacy: false,
                 },
             );
         }
@@ -727,13 +829,15 @@ impl Bound {
     /// The receipt is written when the outcome of the transfer is known. The
     /// accounting is constant time. It reads one period total and never walks
     /// the request history.
+    ///
+    /// The callback does not wait for the migration. An upgrade can land while
+    /// a transfer is in flight, and the money has to settle either way.
     #[private]
     pub fn on_transfer(
         &mut self,
         request_id: u64,
         #[callback_result] result: Result<(), PromiseError>,
     ) {
-        self.ensure_migrated();
         let Some(request) = self.requests.get(&request_id) else {
             return;
         };
@@ -760,7 +864,6 @@ impl Bound {
     /// matching receipt.
     pub fn reconcile_request(&mut self, request_id: u64, moved: bool) -> SpendOutcome {
         self.only_owner();
-        self.ensure_migrated();
         let request = self.request(request_id);
         require!(
             request.status == RequestStatus::ApprovedPending,
@@ -777,6 +880,76 @@ impl Bound {
                 "the owner confirmed that the transfer did not go through and the budget was given back"
             },
         )
+    }
+
+    /// Name the period the money of a historical request belongs to. Owner
+    /// only.
+    ///
+    /// The historical layout kept one flat spend figure and did not record
+    /// the period a reservation belonged to. The migration therefore leaves
+    /// the period of that money to the owner instead of guessing it. Naming
+    /// the period moves the money from the period it was counted in to the
+    /// period the owner names.
+    pub fn reconcile_legacy_transfer(
+        &mut self,
+        request_id: u64,
+        reservation_period_start: u64,
+    ) -> LegacyReconciliation {
+        self.only_owner();
+        require!(
+            reservation_period_start != 0,
+            "the period of the reservation must be named"
+        );
+        let request = self.request(request_id);
+        let Some(mut reservation) = self.legacy_reservation_sidecar(request_id) else {
+            env::panic_str("that request has no historical money to reconcile");
+        };
+        let old_period = reservation.reservation_period_start;
+
+        if old_period != reservation_period_start {
+            if old_period != 0 {
+                let mut totals = self
+                    .period_totals_sidecar(&request.agent_id, old_period)
+                    .unwrap_or(PeriodTotals {
+                        settled: 0,
+                        reserved: 0,
+                    });
+                if reservation.moved {
+                    totals.settled = totals.settled.saturating_sub(reservation.amount);
+                } else {
+                    totals.reserved = totals.reserved.saturating_sub(reservation.amount);
+                }
+                self.set_period_totals(&request.agent_id, old_period, &totals);
+            }
+            let mut totals = self
+                .period_totals_sidecar(&request.agent_id, reservation_period_start)
+                .unwrap_or(PeriodTotals {
+                    settled: 0,
+                    reserved: 0,
+                });
+            if reservation.moved {
+                totals.settled = totals.settled.saturating_add(reservation.amount);
+            } else {
+                totals.reserved = totals.reserved.saturating_add(reservation.amount);
+            }
+            self.set_period_totals(&request.agent_id, reservation_period_start, &totals);
+            reservation.reservation_period_start = reservation_period_start;
+            self.record_legacy_reservation(request_id, &request.agent_id, &reservation);
+        }
+
+        env::log_str(&format!(
+            "LegacyReconciled {} {} {}",
+            request.agent_id, request_id, reservation_period_start
+        ));
+
+        LegacyReconciliation {
+            request_id,
+            agent_id: request.agent_id,
+            amount: reservation.amount,
+            moved: reservation.moved,
+            reservation_period_start,
+            previous_period_start: old_period,
+        }
     }
 
     /// Send a request to a human. The owner and the runner may do this.
@@ -832,7 +1005,20 @@ impl Bound {
             "the rejection reason is outside the allowed bounds"
         );
 
-        let mut policy = self.policy(&request.agent_id);
+        let mut policy = match self.policies.get(&request.agent_id) {
+            Some(policy) => policy,
+            // A request whose agent has no policy cannot be checked against
+            // one. The request is still closed, with a receipt that says why.
+            None => {
+                return self.close_without_policy(
+                    request_id,
+                    request,
+                    RequestStatus::Denied,
+                    Outcome::Denied,
+                    "the policy for this agent no longer exists",
+                )
+            }
+        };
         let now = now_seconds();
         let (period_start, totals) =
             self.prepare_current_period(&request.agent_id, &mut policy, now);
@@ -893,7 +1079,20 @@ impl Bound {
             "the expiry reason is outside the allowed bounds"
         );
 
-        let mut policy = self.policy(&request.agent_id);
+        let mut policy = match self.policies.get(&request.agent_id) {
+            Some(policy) => policy,
+            // A request whose agent has no policy cannot be checked against
+            // one. The request is still closed, with a receipt that says why.
+            None => {
+                return self.close_without_policy(
+                    request_id,
+                    request,
+                    RequestStatus::Expired,
+                    Outcome::Expired,
+                    "the policy for this agent no longer exists",
+                )
+            }
+        };
         let now = now_seconds();
         let (period_start, totals) =
             self.prepare_current_period(&request.agent_id, &mut policy, now);
@@ -964,12 +1163,21 @@ impl Bound {
     }
 
     /// Read one request as the app sees it, with its expiry time.
+    ///
+    /// A request that passed its expiry time is reported as expired, because
+    /// it can no longer be approved. The stored request keeps its status, so
+    /// the history does not change.
     pub fn get_request_view(&self, request_id: u64) -> RequestView {
         let request = self.request(request_id);
         let expires_at = self
             .request_meta_sidecar(request_id)
             .filter(|meta| meta.expires_at != 0)
             .map(|meta| meta.expires_at);
+        let status = if self.request_is_expired(request_id) {
+            RequestStatus::Expired
+        } else {
+            request.status
+        };
         RequestView {
             request_id: request.request_id,
             agent_id: request.agent_id,
@@ -977,12 +1185,21 @@ impl Bound {
             amount: request.amount,
             nonce: request.nonce,
             memo: request.memo,
-            status: request.status,
+            status,
             created_at: request.created_at,
             receipt_id: request.receipt_id,
             flags: request.flags,
             expires_at,
         }
+    }
+
+    /// Whether a request passed its expiry time.
+    fn request_is_expired(&self, request_id: u64) -> bool {
+        let now = now_seconds();
+        self.request_meta_sidecar(request_id)
+            .filter(|meta| meta.expires_at != 0)
+            .map(|meta| now >= meta.expires_at)
+            .unwrap_or(false)
     }
 
     /// Read a page of requests for one agent, newest first.
@@ -1009,8 +1226,9 @@ impl Bound {
 
     /// Read the open requests for one agent, newest first.
     ///
-    /// Only requests that still need a human decision are open. The list is
-    /// bounded by the 256-entry request index.
+    /// Only requests that still need a human decision are open. A request
+    /// that passed its expiry time is not open, because it can no longer be
+    /// approved. The list is bounded by the 256-entry request index.
     pub fn get_open_requests(&self, agent_id: AccountId) -> Vec<RequestView> {
         let mut ids = self.get_request_ids(agent_id.clone());
         ids.reverse();
@@ -1023,6 +1241,7 @@ impl Bound {
                         RequestStatus::Pending | RequestStatus::NeedsApproval
                     )
             })
+            .filter(|request| !self.request_is_expired(request.request_id))
             .map(|request| self.get_request_view(request.request_id))
             .collect()
     }
@@ -1047,8 +1266,26 @@ impl Bound {
         if limit == 0 {
             return Vec::new();
         }
-        let index = self.receipt_index_state();
         let limit = limit.min(MAX_PAGE_SIZE);
+        if !self.schema_is_current() {
+            // Before the migration the receipts are read straight from the
+            // frozen state map, the way the historical layout kept them.
+            let mut result = Vec::new();
+            let mut ordinal = 0u64;
+            while ordinal < limit {
+                let newest_offset = offset.saturating_add(ordinal);
+                if newest_offset >= self.next_receipt_id {
+                    break;
+                }
+                let receipt_id = self.next_receipt_id - 1 - newest_offset;
+                if let Some(receipt) = self.receipts.get(&receipt_id) {
+                    result.push(receipt);
+                }
+                ordinal += 1;
+            }
+            return result;
+        }
+        let index = self.receipt_index_state();
         let mut result = Vec::new();
         for ordinal in 0..limit {
             let newest_offset = offset.saturating_add(ordinal);
@@ -1072,8 +1309,34 @@ impl Bound {
         if limit == 0 {
             return Vec::new();
         }
-        let index = self.agent_receipt_index_state(&agent_id);
         let limit = limit.min(MAX_PAGE_SIZE);
+        if !self.schema_is_current() {
+            // Before the migration the receipts are read straight from the
+            // frozen state map. The scan is bounded, so a very old contract
+            // cannot make the read expensive.
+            let mut result = Vec::new();
+            let mut matched = 0u64;
+            let mut scanned = 0u64;
+            while (result.len() as u64) < limit && scanned < LEGACY_RECEIPT_SCAN_LIMIT {
+                let receipt_id = self.next_receipt_id.saturating_sub(1 + scanned);
+                scanned += 1;
+                if receipt_id >= self.next_receipt_id {
+                    break;
+                }
+                let Some(receipt) = self.receipts.get(&receipt_id) else {
+                    continue;
+                };
+                if receipt.agent_id != agent_id {
+                    continue;
+                }
+                if matched >= offset {
+                    result.push(receipt);
+                }
+                matched += 1;
+            }
+            return result;
+        }
+        let index = self.agent_receipt_index_state(&agent_id);
         let mut result = Vec::new();
         for ordinal in 0..limit {
             let newest_offset = offset.saturating_add(ordinal);
@@ -1131,6 +1394,47 @@ impl Bound {
     pub fn get_receipt_count(&self) -> u64 {
         self.retained_receipt_count()
     }
+
+    /// The state of the bounded migration.
+    pub fn get_migration_status(&self) -> MigrationStatus {
+        let progress = self.migration_progress_sidecar();
+        MigrationStatus {
+            complete: self.schema_is_current(),
+            stage: progress
+                .map(|progress| progress.stage)
+                .unwrap_or(MIGRATION_STAGE_REQUESTS),
+            cursor: progress.map(|progress| progress.cursor).unwrap_or(0),
+            unresolved: self.unresolved_legacy_counter(),
+        }
+    }
+
+    /// The historical records whose money the owner still has to place.
+    ///
+    /// The list is bounded by the number of requests and is read newest
+    /// first. A record with a period of zero is one the owner still has to
+    /// name a period for.
+    pub fn get_legacy_reconciliation(&self, limit: u64) -> Vec<LegacyReconciliationView> {
+        let limit = limit.min(MAX_PAGE_SIZE);
+        let mut out = Vec::new();
+        let mut request_id = self.next_request_id;
+        while request_id > 0 && (out.len() as u64) < limit {
+            request_id -= 1;
+            let Some(reservation) = self.legacy_reservation_sidecar(request_id) else {
+                continue;
+            };
+            let Some(request) = self.requests.get(&request_id) else {
+                continue;
+            };
+            out.push(LegacyReconciliationView {
+                request_id,
+                agent_id: request.agent_id,
+                amount: reservation.amount,
+                moved: reservation.moved,
+                reservation_period_start: reservation.reservation_period_start,
+            });
+        }
+        out
+    }
 }
 
 /// The helpers that are not part of the public interface.
@@ -1163,13 +1467,18 @@ impl Bound {
     /// Require the current sidecar schema before an operation changes the
     /// request lifecycle.
     fn ensure_migrated(&self) {
-        let marker = self
-            .schema_marker_sidecar()
-            .unwrap_or_else(|| panic!("the contract state must be migrated before this operation"));
         require!(
-            marker.version == SCHEMA_VERSION,
+            self.schema_is_current(),
             "the contract state must be migrated before this operation"
         );
+    }
+
+    /// Whether the state carries the current sidecar schema.
+    fn schema_is_current(&self) -> bool {
+        match self.schema_marker_sidecar() {
+            Some(marker) => marker.version == SCHEMA_VERSION,
+            None => false,
+        }
     }
 
     fn schema_marker_sidecar(&self) -> Option<SchemaMarker> {
@@ -1194,23 +1503,16 @@ impl Bound {
         env::storage_write(MIGRATION_PROGRESS_KEY.as_bytes(), &encode_sidecar(progress));
     }
 
-    /// Accept the marker written by the earlier unbounded migration, but do
-    /// not treat it as proof that the bounded indexes exist.
-    fn validate_legacy_schema_marker(&self) {
-        let Some(marker) = env::storage_read(LEGACY_SCHEMA_MARKER_KEY) else {
-            return;
-        };
-        require!(
-            marker == vec![LEGACY_SCHEMA_VERSION],
-            "unsupported Certalyn migration schema"
-        );
-    }
-
     /// Backfill the sidecars for one historical request.
     ///
     /// The method is idempotent for the request it handles: the request meta
     /// sidecar records that the request was counted, so a resumed migration
-    /// never reserves the same amount twice.
+    /// never writes the same metadata twice.
+    ///
+    /// The method does not touch the period totals. The settled money of a
+    /// historical decision is placed once, from the receipt that recorded it,
+    /// and the money of a transfer that was still in flight is left for the
+    /// owner to place.
     fn migrate_request(&mut self, request: &Request) {
         let policy = self.policies.get(&request.agent_id);
         let mut nonce = self
@@ -1233,43 +1535,28 @@ impl Bound {
         }
         self.set_nonce_state(&request.agent_id, &nonce);
 
-        let meta_is_new = self.request_meta_sidecar(request.request_id).is_none();
-        let reserved_period = if request.status == RequestStatus::ApprovedPending {
-            policy
-                .as_ref()
-                .map(|policy| policy.period_start)
-                .filter(|period| *period != 0)
-                .unwrap_or(0)
-        } else {
-            0
-        };
-        if meta_is_new {
+        if self.request_meta_sidecar(request.request_id).is_none() {
+            // The earliest contract wrote the block timestamp into the
+            // request without converting it, so the time is normalized before
+            // the expiry is worked out.
+            let created_at = normalize_timestamp(request.created_at);
             self.set_request_meta(
                 request.request_id,
                 &RequestMeta {
-                    expires_at: request.created_at.saturating_add(REQUEST_TTL_SECONDS),
-                    reserved_period_start: reserved_period,
+                    expires_at: created_at.saturating_add(REQUEST_TTL_SECONDS),
+                    // The historical layout did not record the period a
+                    // reservation belonged to, so it is not guessed here.
+                    reserved_period_start: 0,
                     // The historical layout did not record the rate window.
                     // Leaving this unknown prevents a late failure from
                     // refunding a slot in a newer window.
                     approval_rate_window_start: 0,
+                    legacy: true,
                 },
             );
         }
 
-        if let Some(policy) = policy.as_ref() {
-            let mut totals = self
-                .period_totals_sidecar(&request.agent_id, policy.period_start)
-                .unwrap_or(PeriodTotals {
-                    settled: policy.spent,
-                    reserved: 0,
-                });
-            if meta_is_new && reserved_period == policy.period_start && reserved_period != 0 {
-                totals.reserved = totals.reserved.saturating_add(request.amount);
-                totals.settled = totals.settled.saturating_sub(request.amount);
-            }
-            self.set_period_totals(&request.agent_id, policy.period_start, &totals);
-        }
+        self.remember_migration_agent(&request.agent_id);
 
         // Rebuild the bounded request index from the requests themselves. The
         // first request for an agent replaces any unbounded historical vector;
@@ -1286,11 +1573,180 @@ impl Bound {
         }
         self.set_migration_request_index(&request.agent_id, &ids);
         self.agent_requests.insert(&request.agent_id, &ids);
+
+        // A historical transfer that was still in flight, and a historical
+        // decision whose receipt is missing, both carry money the new
+        // accounting cannot place on its own. The owner names the period.
+        let needs_owner = match request.status {
+            RequestStatus::ApprovedPending => true,
+            RequestStatus::Approved => request.receipt_id.is_none(),
+            _ => false,
+        };
+        if needs_owner
+            && self
+                .legacy_reservation_sidecar(request.request_id)
+                .is_none()
+        {
+            self.record_legacy_reservation(
+                request.request_id,
+                &request.agent_id,
+                &LegacyReservation {
+                    amount: request.amount,
+                    reservation_period_start: 0,
+                    moved: request.status == RequestStatus::Approved,
+                },
+            );
+        }
     }
 
-    /// Add one historical receipt to the current bounded indexes.
+    /// Add one historical receipt to the current indexes and place its money.
+    ///
+    /// The settled money of a historical decision is placed once, in the
+    /// period the receipt recorded. A receipt whose request the owner still
+    /// has to place is skipped, so no amount is counted twice.
     fn migrate_receipt(&mut self, receipt: &Receipt) {
         self.retain_existing_receipt(receipt);
+        if receipt.outcome != Outcome::Approved {
+            return;
+        }
+        if self
+            .legacy_reservation_sidecar(receipt.request_id)
+            .is_some()
+        {
+            return;
+        }
+        let period = normalize_period(receipt.period_start);
+        if period == 0 {
+            return;
+        }
+        let mut totals = self
+            .period_totals_sidecar(&receipt.agent_id, period)
+            .unwrap_or(PeriodTotals {
+                settled: 0,
+                reserved: 0,
+            });
+        totals.settled = totals.settled.saturating_add(receipt.amount);
+        self.set_period_totals(&receipt.agent_id, period, &totals);
+    }
+
+    /// Remember an agent the migration found, so its figures can be checked.
+    fn remember_migration_agent(&mut self, agent_id: &AccountId) {
+        let mut agents = self.migration_agents_sidecar().unwrap_or_default();
+        if agents.iter().any(|known| known == agent_id) {
+            return;
+        }
+        require!(
+            agents.len() < MIGRATION_AGENT_LIMIT,
+            "the migration found more agents than it can check"
+        );
+        agents.push(agent_id.clone());
+        self.set_migration_agents(&agents);
+    }
+
+    fn migration_agents_sidecar(&self) -> Option<Vec<AccountId>> {
+        env::storage_read(MIGRATION_AGENT_PREFIX.as_bytes())
+            .map(|bytes| decode_sidecar(&bytes, "migration agents"))
+    }
+
+    fn set_migration_agents(&self, agents: &[AccountId]) {
+        env::storage_write(
+            MIGRATION_AGENT_PREFIX.as_bytes(),
+            &encode_sidecar(&agents.to_vec()),
+        );
+    }
+
+    /// Whether the reconstructed figures match the stored ones.
+    ///
+    /// The historical layout kept one flat spend figure per agent and one
+    /// period. The new layout keeps the settled and the reserved money of
+    /// every period apart. The two have to agree on the historical period,
+    /// otherwise the migration has guessed wrong somewhere and the owner has
+    /// to say which period the money belongs to.
+    fn legacy_figures_match(&self) -> bool {
+        for agent_id in self.migration_agents_sidecar().unwrap_or_default() {
+            let Some(policy) = self.policies.get(&agent_id) else {
+                continue;
+            };
+            let legacy_figure = policy.spent;
+            let period = normalize_period(policy.period_start);
+            let reconstructed = self
+                .period_totals_sidecar(&agent_id, period)
+                .unwrap_or(PeriodTotals {
+                    settled: 0,
+                    reserved: 0,
+                })
+                .used();
+            if reconstructed != legacy_figure {
+                env::log_str(&format!(
+                    "LegacyFigureMismatch {} legacy {} reconstructed {}",
+                    agent_id, legacy_figure, reconstructed
+                ));
+                return false;
+            }
+        }
+        true
+    }
+
+    /// The historical records whose money the owner still has to place.
+    fn unresolved_legacy_records(&self) -> u64 {
+        self.unresolved_legacy_counter()
+    }
+
+    fn unresolved_legacy_counter(&self) -> u64 {
+        env::storage_read(LEGACY_UNRESOLVED_KEY.as_bytes())
+            .map(|bytes| decode_sidecar(&bytes, "legacy unresolved counter"))
+            .unwrap_or(0)
+    }
+
+    fn set_unresolved_legacy_counter(&self, count: u64) {
+        env::storage_write(LEGACY_UNRESOLVED_KEY.as_bytes(), &encode_sidecar(&count));
+    }
+
+    /// Record the money of a historical request that the new accounting has
+    /// to place, and count it while the owner has not named the period.
+    fn record_legacy_reservation(
+        &mut self,
+        request_id: u64,
+        agent_id: &AccountId,
+        reservation: &LegacyReservation,
+    ) {
+        let previous = self.legacy_reservation_sidecar(request_id);
+        self.set_legacy_reservation(request_id, reservation);
+        let existed = previous.is_some();
+        let was_placed = previous
+            .map(|previous| previous.reservation_period_start != 0)
+            .unwrap_or(false);
+        let is_placed = reservation.reservation_period_start != 0;
+        // The counter holds the records whose money is not placed yet.
+        let change = match (existed, was_placed, is_placed) {
+            (_, _, true) if was_placed => 0i8,
+            (_, false, true) => -1,
+            (true, true, false) => 1,
+            (false, false, false) => 1,
+            _ => 0,
+        };
+        if change != 0 {
+            let count = self.unresolved_legacy_counter();
+            if change < 0 {
+                self.set_unresolved_legacy_counter(count.saturating_sub(1));
+            } else {
+                self.set_unresolved_legacy_counter(count.saturating_add(1));
+            }
+        }
+        env::log_str(&format!(
+            "LegacyReservation {} {} {} period {}",
+            agent_id, request_id, reservation.amount, reservation.reservation_period_start
+        ));
+    }
+
+    fn legacy_reservation_sidecar(&self, request_id: u64) -> Option<LegacyReservation> {
+        let key = format!("{}{}", LEGACY_RESERVATION_PREFIX, request_id);
+        env::storage_read(key.as_bytes()).map(|bytes| decode_sidecar(&bytes, "legacy reservation"))
+    }
+
+    fn set_legacy_reservation(&self, request_id: u64, reservation: &LegacyReservation) {
+        let key = format!("{}{}", LEGACY_RESERVATION_PREFIX, request_id);
+        env::storage_write(key.as_bytes(), &encode_sidecar(reservation));
     }
 
     fn migration_request_index_sidecar(&self, agent_id: &AccountId) -> Option<Vec<u64>> {
@@ -1309,13 +1765,110 @@ impl Bound {
     }
 
     /// Settle an approved request from a known transfer result.
+    ///
+    /// A request of the current layout settles in the period its reservation
+    /// holds. A historical request settles with the historical rules until
+    /// the owner names the period its money belongs to. An upgrade that lands
+    /// while a transfer is in flight therefore never loses the money and
+    /// never guesses where it belongs.
     fn settle_request(
+        &mut self,
+        request_id: u64,
+        moved: bool,
+        evidence: Vec<String>,
+        failure_reason: &str,
+        failure_rule: &str,
+    ) -> SpendOutcome {
+        let Some(request) = self.requests.get(&request_id) else {
+            return SpendOutcome {
+                request_id,
+                approved: false,
+                reason: "RequestNotFound".to_string(),
+                rule: "there is no request with that id".to_string(),
+                evidence: Vec::new(),
+                spent: 0,
+                remaining: 0,
+            };
+        };
+        if request.status != RequestStatus::ApprovedPending {
+            return SpendOutcome {
+                request_id,
+                approved: false,
+                reason: "AlreadySettled".to_string(),
+                rule: "the request was already settled".to_string(),
+                evidence: Vec::new(),
+                spent: 0,
+                remaining: 0,
+            };
+        }
+
+        if self.request_is_legacy(request_id) {
+            // A historical request whose money the owner has already placed
+            // settles in the period the owner named.
+            if let Some(reservation) = self.legacy_reservation_sidecar(request_id) {
+                if reservation.reservation_period_start != 0 {
+                    return self.settle_in_period(
+                        request_id,
+                        moved,
+                        evidence,
+                        failure_reason,
+                        failure_rule,
+                        reservation.reservation_period_start,
+                    );
+                }
+            }
+            return self.settle_legacy_request(
+                request_id,
+                moved,
+                evidence,
+                failure_reason,
+                failure_rule,
+            );
+        }
+
+        let period = self
+            .request_meta_sidecar(request_id)
+            .map(|meta| meta.reserved_period_start)
+            .unwrap_or(0);
+        if period == 0 {
+            // A request of the current layout always records the period its
+            // reservation holds. A missing one is a broken state, not a
+            // reason to guess.
+            env::panic_str("the reservation period of this request is missing");
+        }
+        self.settle_in_period(
+            request_id,
+            moved,
+            evidence,
+            failure_reason,
+            failure_rule,
+            period,
+        )
+    }
+
+    /// Whether a request comes from the historical layout.
+    ///
+    /// A request with no metadata at all was written before the upgrade, so
+    /// it is a historical request too.
+    fn request_is_legacy(&self, request_id: u64) -> bool {
+        match self.request_meta_sidecar(request_id) {
+            Some(meta) => meta.legacy,
+            None => true,
+        }
+    }
+
+    /// Settle a request in the period its reservation holds.
+    ///
+    /// The accounting is constant time. It reads one period total and never
+    /// walks the request history.
+    fn settle_in_period(
         &mut self,
         request_id: u64,
         moved: bool,
         mut evidence: Vec<String>,
         failure_reason: &str,
         failure_rule: &str,
+        reservation_period: u64,
     ) -> SpendOutcome {
         let Some(mut request) = self.requests.get(&request_id) else {
             return SpendOutcome {
@@ -1341,73 +1894,32 @@ impl Bound {
         }
 
         let now = now_seconds();
-        let meta = self.request_meta_sidecar(request_id);
-        let reserved_period = meta
-            .map(|meta| meta.reserved_period_start)
-            .filter(|period| *period != 0);
-        let approval_rate_window = meta
+        let approval_rate_window = self
+            .request_meta_sidecar(request_id)
             .map(|meta| meta.approval_rate_window_start)
             .unwrap_or(0);
         let mut policy = self.policies.get(&request.agent_id);
-        let mut receipt_period = reserved_period.unwrap_or(0);
-        let mut receipt_totals: Option<PeriodTotals> = None;
-        let mut reservation_adjusted = false;
 
         // The sidecar is the accounting source. It knows which period owns
         // the reservation, so settlement never has to guess from the current
         // policy period.
-        if let Some(period) = reserved_period {
-            if let Some(mut totals) = self.period_totals_sidecar(&request.agent_id, period) {
-                totals.reserved = totals.reserved.saturating_sub(request.amount);
-                if moved {
-                    totals.settled = totals.settled.saturating_add(request.amount);
-                }
-                self.set_period_totals(&request.agent_id, period, &totals);
-                receipt_period = period;
-                receipt_totals = Some(totals);
-                reservation_adjusted = true;
-            } else {
-                evidence.push(
-                    "the reservation period accounting sidecar was missing when settlement ran"
-                        .to_string(),
-                );
-            }
+        let mut totals = self
+            .period_totals_sidecar(&request.agent_id, reservation_period)
+            .unwrap_or(PeriodTotals {
+                settled: 0,
+                reserved: 0,
+            });
+        totals.reserved = totals.reserved.saturating_sub(request.amount);
+        if moved {
+            totals.settled = totals.settled.saturating_add(request.amount);
         }
+        self.set_period_totals(&request.agent_id, reservation_period, &totals);
+        let receipt_totals = totals;
+        let receipt_period = reservation_period;
 
         if let Some(policy) = policy.as_mut() {
-            let (current_period, mut current_totals) =
+            let (current_period, current_totals) =
                 self.prepare_current_period(&request.agent_id, policy, now);
-            if receipt_period == 0 {
-                receipt_period = current_period;
-            }
-
-            if receipt_totals.is_none() && receipt_period == current_period {
-                if !reservation_adjusted {
-                    if moved {
-                        // Legacy `Policy::spent` included the reservation, so
-                        // its settled total already contains this transfer.
-                    } else {
-                        // The old layout had only one total. Release the
-                        // failed amount from it without calling it settled.
-                        let from_reserved = current_totals.reserved.min(request.amount);
-                        current_totals.reserved -= from_reserved;
-                        let from_settled = request.amount.saturating_sub(from_reserved);
-                        current_totals.settled =
-                            current_totals.settled.saturating_sub(from_settled);
-                    }
-                    self.set_period_totals(&request.agent_id, current_period, &current_totals);
-                }
-                receipt_totals = Some(current_totals);
-            } else if receipt_totals.is_none() {
-                evidence.push(
-                    "the settled and reserved totals for the reservation period are unavailable"
-                        .to_string(),
-                );
-                receipt_totals = Some(PeriodTotals {
-                    settled: 0,
-                    reserved: 0,
-                });
-            }
 
             if !moved && approval_rate_window != 0 {
                 let (current_window, _) = bound_policy::rate_window(policy, now);
@@ -1426,21 +1938,8 @@ impl Bound {
                 "the remaining budget could not be checked because the policy was missing"
                     .to_string(),
             );
-            if receipt_period == 0 {
-                receipt_period = now;
-            }
-            if receipt_totals.is_none() {
-                receipt_totals = Some(PeriodTotals {
-                    settled: 0,
-                    reserved: 0,
-                });
-            }
         }
 
-        let receipt_totals = receipt_totals.unwrap_or(PeriodTotals {
-            settled: 0,
-            reserved: 0,
-        });
         let settled_usage = receipt_totals.settled;
         let reserved_usage = receipt_totals.reserved;
         let remaining = match policy.as_ref() {
@@ -1520,6 +2019,159 @@ impl Bound {
         }
     }
 
+    /// Settle a historical request with the historical rules.
+    ///
+    /// The historical layout kept one flat spend figure and did not record
+    /// the period a reservation belonged to. The settlement leaves that flat
+    /// figure as it was and records the money, so the owner can name the
+    /// period it belongs to. Nothing is guessed here.
+    fn settle_legacy_request(
+        &mut self,
+        request_id: u64,
+        moved: bool,
+        mut evidence: Vec<String>,
+        failure_reason: &str,
+        failure_rule: &str,
+    ) -> SpendOutcome {
+        let Some(mut request) = self.requests.get(&request_id) else {
+            return SpendOutcome {
+                request_id,
+                approved: false,
+                reason: "RequestNotFound".to_string(),
+                rule: "there is no request with that id".to_string(),
+                evidence: Vec::new(),
+                spent: 0,
+                remaining: 0,
+            };
+        };
+        if request.status != RequestStatus::ApprovedPending {
+            return SpendOutcome {
+                request_id,
+                approved: false,
+                reason: "AlreadySettled".to_string(),
+                rule: "the request was already settled".to_string(),
+                evidence: Vec::new(),
+                spent: 0,
+                remaining: 0,
+            };
+        }
+
+        let now = now_seconds();
+        let mut policy = self.policies.get(&request.agent_id);
+        let legacy_period = policy
+            .as_ref()
+            .map(|policy| normalize_period(policy.period_start))
+            .unwrap_or(0);
+
+        if moved {
+            // The money moved. The historical figure already counted the
+            // reservation, so the figure stays and the money is placed in the
+            // historical period.
+            if legacy_period != 0 {
+                let mut totals = self
+                    .period_totals_sidecar(&request.agent_id, legacy_period)
+                    .unwrap_or(PeriodTotals {
+                        settled: 0,
+                        reserved: 0,
+                    });
+                totals.settled = totals.settled.saturating_add(request.amount);
+                self.set_period_totals(&request.agent_id, legacy_period, &totals);
+            }
+        } else if let Some(policy) = policy.as_mut() {
+            // The money did not move. The historical rules gave the reserved
+            // amount back as long as the period had not rolled over.
+            let (current_period, _) = bound_policy::roll_period(policy, now);
+            if current_period == normalize_period(policy.period_start) {
+                policy.spent = policy.spent.saturating_sub(request.amount);
+                self.policies.insert(&request.agent_id, policy);
+            }
+        }
+
+        let spent = policy.as_ref().map(|policy| policy.spent).unwrap_or(0);
+        let remaining = match policy.as_ref() {
+            Some(policy) => policy.budget.saturating_sub(spent),
+            None => u128::MAX,
+        };
+
+        // The money is placed in the historical period. The migration checks
+        // that figure against the historical one, and the owner names the
+        // period when the check says the historical period is the wrong one.
+        self.record_legacy_reservation(
+            request_id,
+            &request.agent_id,
+            &LegacyReservation {
+                amount: request.amount,
+                reservation_period_start: legacy_period,
+                moved,
+            },
+        );
+
+        if policy.is_none() {
+            evidence.push("the policy was missing when settlement ran".to_string());
+        }
+        evidence.push(
+            "the historical layout kept one spend figure and no reservation period, so the owner confirms the period of this transfer"
+                .to_string(),
+        );
+        evidence.push(format!(
+            "the historical spend figure includes the transfers that were still in flight, settled total {} yoctoNEAR",
+            spent
+        ));
+
+        let (status, outcome, reason, rule) = if moved {
+            (
+                RequestStatus::Approved,
+                Outcome::Approved,
+                "",
+                "every policy check passed and the counterparty check approved",
+            )
+        } else {
+            (
+                RequestStatus::SettlementFailed,
+                Outcome::Failed,
+                failure_reason,
+                failure_rule,
+            )
+        };
+
+        request.status = status;
+        let receipt = self.write_receipt(
+            &request.agent_id,
+            &request.vendor,
+            request.amount,
+            request.nonce,
+            &request.memo,
+            request.request_id,
+            outcome,
+            reason,
+            rule,
+            &evidence,
+            legacy_period,
+            spent,
+            remaining,
+        );
+        request.receipt_id = Some(receipt.receipt_id);
+        self.requests.insert(&request_id, &request);
+
+        env::log_str(&format!(
+            "LegacySpend{} {} {} {}",
+            if moved { "Settled" } else { "SettlementFailed" },
+            request.agent_id,
+            request.vendor,
+            request.amount
+        ));
+
+        SpendOutcome {
+            request_id,
+            approved: moved,
+            reason: reason.to_string(),
+            rule: rule.to_string(),
+            evidence,
+            spent,
+            remaining,
+        }
+    }
+
     /// Deny an approval when the agent's policy no longer exists.
     fn deny_missing_policy(&mut self, request_id: u64, mut request: Request) -> SpendOutcome {
         request.status = RequestStatus::Denied;
@@ -1549,6 +2201,52 @@ impl Bound {
             approved: false,
             reason: "PolicyMissing".to_string(),
             rule: "the policy for this agent no longer exists".to_string(),
+            evidence,
+            spent: 0,
+            remaining: u128::MAX,
+        }
+    }
+
+    /// Close a request whose agent has no policy.
+    ///
+    /// The request cannot be checked against a budget that does not exist, so
+    /// it is closed without one and the receipt says that the policy was
+    /// missing. The request is never left open because of it.
+    fn close_without_policy(
+        &mut self,
+        request_id: u64,
+        mut request: Request,
+        status: RequestStatus,
+        outcome: Outcome,
+        rule: &str,
+    ) -> SpendOutcome {
+        let evidence = vec![
+            "the policy for this agent no longer exists".to_string(),
+            "no budget total could be checked".to_string(),
+        ];
+        let receipt = self.write_receipt(
+            &request.agent_id,
+            &request.vendor,
+            request.amount,
+            request.nonce,
+            &request.memo,
+            request.request_id,
+            outcome,
+            "PolicyMissing",
+            rule,
+            &evidence,
+            0,
+            0,
+            u128::MAX,
+        );
+        request.status = status;
+        request.receipt_id = Some(receipt.receipt_id);
+        self.requests.insert(&request_id, &request);
+        SpendOutcome {
+            request_id,
+            approved: false,
+            reason: "PolicyMissing".to_string(),
+            rule: rule.to_string(),
             evidence,
             spent: 0,
             remaining: u128::MAX,
@@ -1726,7 +2424,13 @@ impl Bound {
     }
 
     fn retained_receipt_count(&self) -> u64 {
-        self.receipt_index_state().len
+        if self.schema_is_current() {
+            self.receipt_index_state().len
+        } else {
+            // Before the migration the contract keeps every receipt, the way
+            // the historical layout did.
+            self.next_receipt_id
+        }
     }
 
     /// Append one receipt id to the global and per-agent indexes.
@@ -1784,7 +2488,10 @@ impl Bound {
     /// Add a receipt that already exists in the frozen state map to the
     /// current indexes. Migration calls this in bounded batches.
     fn retain_existing_receipt(&mut self, receipt: &Receipt) {
-        if self.retained_receipt_count() >= RECEIPT_RETENTION_LIMIT {
+        // The bound is on the index, which holds the receipts the contract
+        // keeps. Before the migration the index is empty, so nothing is
+        // pruned while the receipts are being read in.
+        if self.receipt_index_state().len >= RECEIPT_RETENTION_LIMIT {
             self.prune_oldest_receipt();
         }
         self.append_receipt_to_indexes(receipt.receipt_id, &receipt.agent_id);
@@ -1831,10 +2538,20 @@ impl Bound {
             created_at: now_seconds(),
         };
         self.receipts.insert(&receipt_id, &receipt);
-        if self.retained_receipt_count() >= RECEIPT_RETENTION_LIMIT {
-            self.prune_oldest_receipt();
+        if self.schema_is_current() {
+            if self.receipt_index_state().len >= RECEIPT_RETENTION_LIMIT {
+                self.prune_oldest_receipt();
+            }
+            self.append_receipt_to_indexes(receipt_id, agent_id);
+        } else {
+            // Before the migration the bounded indexes do not exist yet. The
+            // migration builds them, so a receipt written in the meantime is
+            // indexed once, by the migration, and not twice.
+            require!(
+                self.next_receipt_id <= RECEIPT_RETENTION_LIMIT,
+                "the contract holds more receipts than the migration can index"
+            );
         }
-        self.append_receipt_to_indexes(receipt_id, agent_id);
         receipt
     }
 }

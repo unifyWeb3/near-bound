@@ -1,7 +1,7 @@
 {
   "product": "Certalyn",
   "artifact": "contract/target/wasm32-unknown-unknown/release/bound_contract.wasm",
-  "sha256": "8ea296c6159ebc7b8d601f3034f9bbab5cb47e61146bed3ac260cd23078dab72",
+  "sha256": "e32dedf79d4c244868f570426b43f93b88ee86375f8bbd26e45acdb087106efa",
   "toolchain": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
   "binaryen_version": "version_133",
   "binaryen_sha256": "2dc9c7813f5375db93d96ead4b78222fcc3e2677bbb832297af4797782a37489",

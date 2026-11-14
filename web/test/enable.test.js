@@ -32,7 +32,7 @@ test('enableSteps names three concrete accounts and states the exact step and co
   assert.strictEqual(steps.length, 8);
   let commands = 0;
   for (const step of steps) commands += (step.cmd.match(/\n/g) || []).length + 1;
-  assert.strictEqual(commands, 12);
+  assert.strictEqual(commands, 11);
   const allCommands = steps.map((step) => step.cmd).join('\n');
   assert.ok(allCommands.includes(names.contract));
   assert.ok(allCommands.includes(names.agent));
@@ -74,6 +74,22 @@ test('fresh-account setup does not present historical deployment receipts', () =
   assert.ok(deploy.cmd.includes('contract/target/wasm32-unknown-unknown/release/bound_contract.wasm'));
 });
 
+test('the deploy step builds the verified artifact and deploys that file', () => {
+  const steps = enableSteps(names);
+  const deploy = steps.find((step) => step.title.startsWith('Build and deploy'));
+  assert.ok(deploy.cmd.includes('scripts/build-wasm.sh'), 'builds with the pinned script');
+  assert.ok(
+    deploy.cmd.includes(
+      'near contract deploy ' +
+        names.contract +
+        ' use-file contract/target/wasm32-unknown-unknown/release/bound_contract.wasm',
+    ),
+    'deploys the artifact the build script verified',
+  );
+  assert.ok(!deploy.cmd.includes('wasm-opt'), 'does not optimize with an ambient wasm-opt');
+  assert.ok(!deploy.cmd.includes('contract/bound_contract.wasm'), 'does not deploy a second file');
+});
+
 test('renderEnable starts with fresh default names instead of deployment names', () => {
   const state = { deployment: names };
   renderEnable(state, () => {});
@@ -91,6 +107,19 @@ test('renderEnable starts with fresh default names instead of deployment names',
     ],
   );
   assert.deepStrictEqual(state.enableNames, DEFAULT_ENABLE_NAMES);
+});
+
+test('the name fields are not remounted while the reader types', () => {
+  const state = { deployment: names };
+  renderEnable(state, () => {});
+  const form = document.getElementById('enable-names');
+  const before = form.children.slice();
+
+  const updated = { ...state };
+  renderEnable(updated, () => {});
+
+  assert.strictEqual(form.children.length, before.length, 'the fields are still there');
+  assert.strictEqual(form.children[0], before[0], 'the first field is the same node');
 });
 
 test('judge curls use finality final and valid JSON', () => {

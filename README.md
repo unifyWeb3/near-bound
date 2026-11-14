@@ -144,6 +144,83 @@ curl for every figure is in the console's **Evidence** view, and the
 transactions behind the recorded run are in the evidence table of this
 repository.
 
+<!-- evidence:start -->
+| What | Transaction | Result | Branch |
+| --- | --- | --- | --- |
+| the contract is upgraded in place, the state carried over | [Bb64yQtpRcu1](https://explorer.testnet.near.org/transactions/Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls) | deployed, code hash HdgJrzYbWsQKWgxRvFG1yUD3UM9M89mRGUE7ESTfjE8d, sha256 f720587997a04f8bf9702aeeca3525867b321374e151fe26bfef9ec2ca955a7e | testnet only |
+| the agent is given NEAR for gas | [HnHYC226AEEa](https://explorer.testnet.near.org/transactions/HnHYC226AEEaM4L8kuekL86jTp1ur8bnfQEATCpcfsPG) | the agent account can make a call | testnet only |
+| the first of two requests for 1 NEAR | [EEHzgVkt4HXT](https://explorer.testnet.near.org/transactions/EEHzgVkt4HXTHCriHq335fpP97Kp6ZQ9M2EmSXfHKjqS) | request 10 | testnet only |
+| the second of two requests for 1 NEAR | [GebCsWA4K5S2](https://explorer.testnet.near.org/transactions/GebCsWA4K5S2GHfM1QzmymoQ2p8d1qp6hBsKAcfMsmDb) | request 11 | testnet only |
+| the first of the two is approved | [HBD7hJL9bv5N](https://explorer.testnet.near.org/transactions/HBD7hJL9bv5Npir8T9TtNMzJ2DJf4hpbUDWNvQWU6bGW) | receipt 19, Approved | testnet only |
+| the second of the two is approved | [6MKVUN9QoLd6](https://explorer.testnet.near.org/transactions/6MKVUN9QoLd6y92nrgrRYfrVWR2DmgCpbRQnnfXb1JEv) | receipt 20, Denied BudgetExceeded | testnet only |
+| the agent asks for 0.5 NEAR | [HEBxWQZFBHuJ](https://explorer.testnet.near.org/transactions/HEBxWQZFBHuJNcaZCGcLtaeRJmU8nWVkkgX6sSkhqHPi) | request 8 | testnet only |
+| the owner freezes every agent | [GgmPg2rmYi31](https://explorer.testnet.near.org/transactions/GgmPg2rmYi31ZQuDahyhV7PND8a2bfjFQdW6qvUiaWSX) | the kill switch is on | testnet only |
+| the owner tries to approve while frozen | [BsoBVYQXyg1N](https://explorer.testnet.near.org/transactions/BsoBVYQXyg1NdvFmURCACBDK6J96PsdSGq8v2bELS8YY) | refused, no receipt, the request stays open | testnet only |
+| the owner lifts the freeze | [4dWyQA12DyjU](https://explorer.testnet.near.org/transactions/4dWyQA12DyjUP57XJGocu7iPHYDJpyk9UnTSz4bzwcpD) | the kill switch is off | testnet only |
+| the owner approves it | [2jPzCn18sed5](https://explorer.testnet.near.org/transactions/2jPzCn18sed5EXNorsSdbyDcDhkVfEATr7AgHTMiUZ2v) | receipt 17, Approved | testnet only |
+| the owner adds a vendor that does not exist | [6HL6VHy1zzoz](https://explorer.testnet.near.org/transactions/6HL6VHy1zzozfDSmLeqmYFcKL1sxWawo6Yvr56CBquA8) | the allowlist has ghost-vendor.testnet | testnet only |
+| the agent asks to pay the vendor that does not exist | [Cc6rmKhH5gAa](https://explorer.testnet.near.org/transactions/Cc6rmKhH5gAa89cqARW9zhy2jiFbEGrDnZtm9RmKA9yf) | request 9 | testnet only |
+| the owner approves it | [4JTiK48kgmGw](https://explorer.testnet.near.org/transactions/4JTiK48kgmGwLJxjjtdDLEZn7gZhvGVKpqJgT7sXvQRm) | receipt 18, Failed TransferFailed, the budget came back | testnet only |
+| the owner removes the vendor that does not exist | [3RgJLNZ5rF4z](https://explorer.testnet.near.org/transactions/3RgJLNZ5rF4zSwcjXzYEKA4NFeJP1ZfahvEsCskonF4S) | the allowlist is back to one vendor | testnet only |
+
+Every row can be checked with the public testnet RPC, with no key and no
+explorer. Nearblocks answers a script with a 403, and the public RPC has
+no transaction status method, so each line below reads the state the
+transaction left behind. Run any of them as it is:
+
+```bash
+# the contract is upgraded in place, the state carried over
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","account_id":"bound-testnet-97685.testnet","finality":"final"}}'
+
+# the agent is given NEAR for gas
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"view_account","account_id":"bound-agent.testnet","finality":"final"}}'
+
+# the first of two requests for 1 NEAR
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogMTB9","finality":"final"}}'
+
+# the second of two requests for 1 NEAR
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogMTF9","finality":"final"}}'
+
+# the first of the two is approved
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMTl9","finality":"final"}}'
+
+# the second of the two is approved
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMjB9","finality":"final"}}'
+
+# the agent asks for 0.5 NEAR
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogOH0=","finality":"final"}}'
+
+# the owner freezes every agent
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogNn0=","finality":"final"}}'
+
+# the owner tries to approve while frozen
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogNn0=","finality":"final"}}'
+
+# the owner lifts the freeze
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_kill_switch","args_base64":"e30=","finality":"final"}}'
+
+# the owner approves it
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMTd9","finality":"final"}}'
+
+# the owner adds a vendor that does not exist
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"eyJhZ2VudF9pZCI6ICJib3VuZC1hZ2VudC50ZXN0bmV0In0=","finality":"final"}}'
+
+# the agent asks to pay the vendor that does not exist
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_request","args_base64":"eyJyZXF1ZXN0X2lkIjogOX0=","finality":"final"}}'
+
+# the owner approves it
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_receipt","args_base64":"eyJyZWNlaXB0X2lkIjogMTh9","finality":"final"}}'
+
+# the owner removes the vendor that does not exist
+curl -s -H 'Content-Type: application/json' https://test.rpc.fastnear.com -d '{"jsonrpc":"2.0","id":"1","method":"query","params":{"request_type":"call_function","account_id":"bound-testnet-97685.testnet","method_name":"get_policy","args_base64":"eyJhZ2VudF9pZCI6ICJib3VuZC1hZ2VudC50ZXN0bmV0In0=","finality":"final"}}'
+
+```
+
+Every one of these is on testnet. Nothing here has been run on mainnet, and
+nothing here can be: there is no mainnet deployment. The branch column says
+which. The mainnet branch of this project is not built.
+<!-- evidence:end -->
+
 The wasm is built reproducibly. The build script compiles twice in separate
 directories, compares the bytes, and writes a manifest. The expected hash is
 committed in [docs/wasm-lock.json](docs/wasm-lock.json) and CI fails when the
@@ -183,7 +260,7 @@ here, with tests.
 | The settlement callback walked the whole request history, so it could run out of gas and leave the budget reserved with no way out | The reservation is held in a sidecar keyed by agent and period, and the owner can reconcile a request that never settled | `the_settlement_is_constant_time_with_a_long_history`, `the_owner_can_reconcile_a_request_that_never_settled` |
 | A failed payment kept its rate slot | The slot comes back only in the approval window that reserved it | `a_failed_payment_gives_the_rate_slot_back`, `an_old_rate_window_failure_does_not_refund_a_new_window` |
 | A nonce could be replayed while the first request was still undecided | Accepted and approved nonce watermarks are tracked separately per agent | `an_accepted_nonce_cannot_be_replayed`, `approvals_use_a_separate_monotonic_nonce_watermark` |
-| Legacy state could be used without building the new indexes | A fresh state writes a schema marker; legacy state requires an owner-only, bounded, resumable migration | `the_migration_marks_the_schema_and_keeps_the_requests`, `the_legacy_migration_is_batched_and_resumable` |
+| Legacy state could be used without building the new indexes | A fresh state writes a schema marker; legacy state requires an owner-only, bounded, resumable migration | `the_migration_marks_the_schema_and_keeps_the_requests`, `the_legacy_migration_is_batched_and_resumable`, `the_migration_finishes_on_the_shape_of_the_live_contract` |
 | Receipt history and per-agent pages could grow without a bound | The contract retains 10,000 receipts, keeps a 256-entry request index, and pages through versioned receipt indexes | `the_legacy_migration_enforces_the_receipt_retention_limit`, `the_request_index_is_bounded_to_256_ids` |
 | Settlement totals could count a reservation as money moved | Settled and reserved totals are separate, and settlement records the exact reservation period | `a_failed_reservation_is_reported_separately_from_settled_money`, `payments_that_settle_out_of_order_leave_the_right_figures` |
 | The console read the whole ledger of every agent to show one agent | The contract reads one agent's receipts in pages | `getLedger on a paged contract uses the agent page view` |

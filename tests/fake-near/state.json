@@ -1,7 +1,28 @@
 {
-  "last_nonce": {
-    "bound-agent.testnet": 15
+  "nonces": {
+    "bound-agent.testnet": {
+      "accepted": 15,
+      "approved": 15
+    }
   },
+  "policies": {
+    "bound-agent.testnet": {
+      "budget": "5000000000000000000000000",
+      "settled": "0",
+      "reserved": "0",
+      "period_start": 1794403451,
+      "max_single_spend": "1000000000000000000000000",
+      "rate_limit": 5,
+      "rate_count": 1,
+      "vendors": [
+        "bound-vendor.testnet"
+      ],
+      "request_count": 14,
+      "revoked": false
+    }
+  },
+  "owner": "owner.testnet",
+  "runner": "runner.testnet",
   "request_count": 14,
   "next_request_id": 14,
   "receipt_count": 30,

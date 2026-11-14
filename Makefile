@@ -56,7 +56,7 @@ verify:
 	python3 scripts/claims.py --check
 
 shellcheck:
-	shellcheck demo/agent.sh demo/protocol_arm.sh scripts/build-wasm.sh scripts/dependency-check.sh tests/fake-near/run.sh tests/dependency-check/run.sh
+	shellcheck demo/agent.sh demo/nonce.sh demo/protocol_arm.sh scripts/build-wasm.sh scripts/dependency-check.sh tests/fake-near/run.sh tests/dependency-check/run.sh
 
 # The dependency check installs a pinned cargo-audit when needed and fetches
 # the public RustSec advisory database. It fails closed on either failure.

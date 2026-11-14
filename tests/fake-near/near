@@ -10,11 +10,23 @@ The demo scripts parse these forms of output:
   * tx calls:    `Transaction ID: <hash>` and optionally `succeeded`
   * denied tx:   an error line on stderr (merged into stdout by the demo)
 
-Request ids and receipt ids are separate namespaces. A request does not create
-a receipt. The fake owner approval path settles a pending request and creates
-one receipt, which lets the shell test exercise the full lifecycle.
+The fake models the parts of the contract the demos depend on:
+
+  * separate accepted and approved nonce watermarks, and a refusal of a
+    replayed nonce
+  * the settled and the reserved money of the period, so the policy view
+    reports the spend that really happened
+  * the Pending and NeedsApproval request states, the owner and the runner
+    roles, and the owner-only methods for a flagged request
+  * a receipt for every decision, so a request and a receipt keep separate
+    ids
+
+Every invocation holds a lock for the whole transaction, so two runs at the
+same time cannot read the same counter and write it back twice.
 """
 import base64
+import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -24,11 +36,31 @@ STATE_PATH = os.environ.get(
     "FAKE_NEAR_STATE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 )
 ALPHABET = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+BUDGET = "5000000000000000000000000"
+MAX_SINGLE_SPEND = "1000000000000000000000000"
+VENDORS = ["bound-vendor.testnet"]
+PERIOD_START = 1794403451
 
 
 def default_state():
     return {
-        "last_nonce": {"bound-agent.testnet": 15},
+        "nonces": {"bound-agent.testnet": {"accepted": 15, "approved": 15}},
+        "policies": {
+            "bound-agent.testnet": {
+                "budget": BUDGET,
+                "settled": "0",
+                "reserved": "0",
+                "period_start": PERIOD_START,
+                "max_single_spend": MAX_SINGLE_SPEND,
+                "rate_limit": 5,
+                "rate_count": 1,
+                "vendors": list(VENDORS),
+                "request_count": 14,
+                "revoked": False,
+            }
+        },
+        "owner": "owner.testnet",
+        "runner": "owner.testnet",
         "request_count": 14,
         "next_request_id": 14,
         "receipt_count": 30,
@@ -48,6 +80,14 @@ def load_state():
                 state.update(stored)
         except (ValueError, OSError):
             pass
+    # The older layout kept one nonce per agent. It is read once and the new
+    # watermarks are used from then on.
+    legacy = state.pop("last_nonce", None)
+    if isinstance(legacy, dict):
+        for agent, value in legacy.items():
+            state.setdefault("nonces", {}).setdefault(
+                agent, {"accepted": value, "approved": value}
+            )
     return state
 
 
@@ -57,6 +97,29 @@ def save_state(state):
         json.dump(state, handle, indent=2, sort_keys=True)
         handle.write("\n")
     os.replace(tmp, STATE_PATH)
+
+
+class Lock:
+    """A lock over the whole state transaction."""
+
+    def __init__(self, path):
+        self.path = path + ".lock"
+        self.handle = None
+
+    def __enter__(self):
+        directory = os.path.dirname(os.path.abspath(self.path))
+        if directory:
+            os.makedirs(directory, exist_ok=True)
+        self.handle = open(self.path, "a+")
+        fcntl.flock(self.handle.fileno(), fcntl.LOCK_EX)
+        return self
+
+    def __exit__(self, *_):
+        try:
+            fcntl.flock(self.handle.fileno(), fcntl.LOCK_UN)
+        finally:
+            self.handle.close()
+        return False
 
 
 def err(msg):
@@ -77,11 +140,11 @@ def argument_value(argv, name):
 
 def decoded_arguments(argv):
     raw = argument_value(argv, "json-args")
-    if raw is None:
-        raw = argument_value(argv, "base64-args")
-    if raw is None:
+    base64_raw = argument_value(argv, "base64-args")
+    if raw is None and base64_raw is None:
         return {}
-    if argument_value(argv, "base64-args") == raw:
+    if base64_raw is not None:
+        raw = base64_raw
         try:
             raw = base64.b64decode(raw).decode()
         except (ValueError, UnicodeDecodeError):
@@ -93,21 +156,52 @@ def decoded_arguments(argv):
     return value if isinstance(value, dict) else {}
 
 
+def nonce_state(state, agent):
+    nonces = state.setdefault("nonces", {})
+    entry = nonces.setdefault(agent, {"accepted": 0, "approved": 0})
+    entry.setdefault("accepted", 0)
+    entry.setdefault("approved", 0)
+    return entry
+
+
+def policy_state(state, agent):
+    policies = state.setdefault("policies", {})
+    return policies.setdefault(
+        agent,
+        {
+            "budget": BUDGET,
+            "settled": "0",
+            "reserved": "0",
+            "period_start": PERIOD_START,
+            "max_single_spend": MAX_SINGLE_SPEND,
+            "rate_limit": 5,
+            "rate_count": 1,
+            "vendors": list(VENDORS),
+            "request_count": 0,
+            "revoked": False,
+        },
+    )
+
+
 def policy_for(agent, state):
+    policy = policy_state(state, agent)
+    spent = int(policy["settled"]) + int(policy["reserved"])
+    budget = int(policy["budget"])
+    nonces = nonce_state(state, agent)
     return {
         "agent_id": agent,
-        "budget": "5000000000000000000000000",
-        "spent": "0",
-        "remaining": "5000000000000000000000000",
+        "budget": policy["budget"],
+        "spent": str(spent),
+        "remaining": str(max(0, budget - spent)),
         "period_seconds": 3600,
-        "period_start": 1794403451,
-        "rate_count": 1,
-        "rate_limit": 5,
-        "vendors": ["bound-vendor.testnet"],
-        "max_single_spend": "1000000000000000000000000",
-        "last_nonce": state["last_nonce"].get(agent, 0),
-        "revoked": False,
-        "request_count": state.get("request_count", 0),
+        "period_start": policy["period_start"],
+        "rate_count": policy["rate_count"],
+        "rate_limit": policy["rate_limit"],
+        "vendors": policy["vendors"],
+        "max_single_spend": policy["max_single_spend"],
+        "last_nonce": nonces["approved"],
+        "revoked": policy.get("revoked", False),
+        "request_count": policy.get("request_count", 0),
     }
 
 
@@ -134,36 +228,174 @@ def transaction_id(state):
     return txid
 
 
-def settle_request(state, request_id):
-    request = state.get("requests", {}).get(str(request_id))
-    if request is None:
-        err("fake near: no request with that id")
-    if request.get("status") != "Pending":
-        err("fake near: only a pending request can be approved")
-
+def write_receipt(state, request, outcome, reason, rule, evidence=None):
     receipt_id = state.get("receipt_count", 0)
+    policy = policy_state(state, request["agent_id"])
+    settled = int(policy["settled"])
+    reserved = int(policy["reserved"])
+    budget = int(policy["budget"])
     receipt = {
         "receipt_id": receipt_id,
-        "request_id": request_id,
+        "request_id": request["request_id"],
         "agent_id": request["agent_id"],
         "vendor": request["vendor"],
         "amount": str(request["amount"]),
         "nonce": request["nonce"],
         "memo": request["memo"],
-        "outcome": "Approved",
-        "reason": "",
-        "rule": "every policy check passed and the transfer settled",
-        "evidence": [],
-        "period_start": 1794403451,
-        "spent_after": str(request["amount"]),
-        "remaining_after": "4000000000000000000000000",
-        "created_at": 1794403451,
+        "outcome": outcome,
+        "reason": reason,
+        "rule": rule,
+        "evidence": evidence or [],
+        "period_start": policy["period_start"],
+        "spent_after": str(settled + reserved),
+        "remaining_after": str(max(0, budget - settled - reserved)),
+        "created_at": policy["period_start"],
     }
-    request["status"] = "Approved"
-    request["receipt_id"] = receipt_id
     state.setdefault("receipts", {})[str(receipt_id)] = receipt
     state["receipt_count"] = receipt_id + 1
+    request["receipt_id"] = receipt_id
     return receipt
+
+
+def settle_request(state, request_id, signer, owner_only=False):
+    """Approve a request and settle it, the way the contract does."""
+    owner = state.get("owner", "owner.testnet")
+    runner = state.get("runner", "owner.testnet")
+    request = state.get("requests", {}).get(str(request_id))
+    if request is None:
+        # The request does not exist. A scoped key never reaches the contract,
+        # so the protocol refuses the call first.
+        for agent in state.get("policies", {}):
+            if signer == agent:
+                err("Error: approve_request isn't allowed by the access key")
+        err("fake near: no request with that id")
+    if signer == request.get("agent_id"):
+        # The agent key is scoped to request_spend, so the protocol refuses
+        # the call before the contract is reached.
+        err("Error: approve_request isn't allowed by the access key")
+    if owner_only or request["status"] == "NeedsApproval":
+        if signer != owner:
+            err("fake near: only the owner may do this")
+    elif signer not in (owner, runner):
+        err("fake near: only the owner or the runner may do this")
+    if request["status"] not in ("Pending", "NeedsApproval"):
+        err("fake near: only an open request can be approved")
+
+    policy = policy_state(state, request["agent_id"])
+    amount = int(request["amount"])
+    if request["vendor"] not in policy["vendors"]:
+        receipt = write_receipt(
+            state,
+            request,
+            "Denied",
+            "VendorNotAllowed",
+            "the receiver is not on the allowlist",
+            [f"the allowlist holds {', '.join(policy['vendors'])}"],
+        )
+        request["status"] = "Denied"
+        return receipt
+
+    # The budget is reserved first, so two approvals cannot spend the same
+    # money twice, and the reservation becomes settled money.
+    policy["reserved"] = str(int(policy["reserved"]) + amount)
+    request["status"] = "ApprovedPending"
+    nonces = nonce_state(state, request["agent_id"])
+    nonces["approved"] = max(nonces["approved"], int(request["nonce"]))
+
+    policy["reserved"] = str(int(policy["reserved"]) - amount)
+    policy["settled"] = str(int(policy["settled"]) + amount)
+    receipt = write_receipt(
+        state,
+        request,
+        "Approved",
+        "",
+        "every policy check passed and the transfer settled",
+    )
+    request["status"] = "Approved"
+    return receipt
+
+
+def reject_request(state, request_id, signer, reason):
+    owner = state.get("owner", "owner.testnet")
+    runner = state.get("runner", "owner.testnet")
+    request = state.get("requests", {}).get(str(request_id))
+    if request is None:
+        err("fake near: no request with that id")
+    if request["status"] == "NeedsApproval":
+        if signer != owner:
+            err("fake near: only the owner may do this")
+    elif signer not in (owner, runner):
+        err("fake near: only the owner or the runner may do this")
+    if request["status"] not in ("Pending", "NeedsApproval"):
+        err("fake near: only an open request can be rejected")
+    receipt = write_receipt(
+        state,
+        request,
+        "Denied",
+        "CounterpartyBlocked",
+        "the counterparty check refused this receiver",
+        [reason] if reason else [],
+    )
+    request["status"] = "Denied"
+    return receipt
+
+
+def flag_request(state, request_id, signer, reasons):
+    owner = state.get("owner", "owner.testnet")
+    runner = state.get("runner", "owner.testnet")
+    request = state.get("requests", {}).get(str(request_id))
+    if request is None:
+        err("fake near: no request with that id")
+    if signer not in (owner, runner):
+        err("fake near: only the owner or the runner may do this")
+    if request["status"] != "Pending":
+        err("fake near: only a pending request can be flagged")
+    request["status"] = "NeedsApproval"
+    request["flags"] = reasons or ["the counterparty check wants a human"]
+    return request
+
+
+def request_spend(state, args_json, deposit, gas):
+    agent_id = args_json.get("agent_id")
+    vendor = args_json.get("vendor", "")
+    if vendor == "stranger.testnet":
+        err("Error: VendorNotAllowed: vendor not in allowlist")
+    if deposit and deposit != "0 NEAR" and "yoctoNEAR" in deposit:
+        err("Error: Having a deposit with a function call action is not allowed")
+    if gas and "300.0 Tgas" in gas:
+        err("Error: the key does not have enough allowance")
+    if not agent_id:
+        err("fake near: the request has no agent")
+
+    policy = policy_state(state, agent_id)
+    if vendor not in policy["vendors"]:
+        err("Error: VendorNotAllowed: vendor not in allowlist")
+
+    nonce = int(args_json.get("nonce", 0))
+    nonces = nonce_state(state, agent_id)
+    if nonce <= nonces["accepted"]:
+        err(f"Error: NonceReplay: nonce {nonce} is not higher than {nonces['accepted']}")
+
+    request_id = state.get("next_request_id", 0)
+    state["next_request_id"] = request_id + 1
+    state["request_count"] = state.get("request_count", 0) + 1
+    policy["request_count"] = policy.get("request_count", 0) + 1
+    nonces["accepted"] = max(nonces["accepted"], nonce)
+    state.setdefault("requests", {})[str(request_id)] = {
+        "request_id": request_id,
+        "agent_id": agent_id,
+        "vendor": vendor,
+        "amount": args_json.get("amount", 0),
+        "nonce": nonce,
+        "memo": args_json.get("memo", ""),
+        "status": "Pending",
+        "receipt_id": None,
+        "created_at": PERIOD_START,
+        "expires_at": PERIOD_START + 30 * 24 * 3600,
+        "flags": [],
+    }
+    spent = int(policy["settled"]) + int(policy["reserved"])
+    return request_id, spent, int(policy["budget"])
 
 
 def main(argv):
@@ -173,149 +405,193 @@ def main(argv):
     mode = argv[3]
     account = argv[4]
     method = argv[5]
-    state = load_state()
 
-    if mode == "as-read-only":
-        if method == "get_receipt_count":
-            sys.stdout.write(marker_json(state["receipt_count"]))
-            return 0
-        if method == "get_policy":
-            agent = decoded_arguments(argv).get("agent_id", "bound-agent.testnet")
-            sys.stdout.write(marker_json(policy_for(agent, state)))
-            return 0
-        if method == "get_receipt":
-            receipt_id = decoded_arguments(argv).get("receipt_id", 0)
-            sys.stdout.write(marker_json(receipt_for(receipt_id, state)))
-            return 0
-        if method == "get_request":
-            request_id = decoded_arguments(argv).get("request_id", 0)
-            request = state.get("requests", {}).get(str(request_id))
-            if request is None:
-                err("fake near: no request with that id")
-            sys.stdout.write(marker_json(request))
-            return 0
-        if method == "get_request_ids":
-            agent = decoded_arguments(argv).get("agent_id", "bound-agent.testnet")
-            ids = [
-                int(request_id)
-                for request_id, request in state.get("requests", {}).items()
-                if request.get("agent_id") == agent
-            ]
-            sys.stdout.write(marker_json(sorted(ids)))
-            return 0
-        if method == "get_open_requests":
-            agent = decoded_arguments(argv).get("agent_id", "bound-agent.testnet")
-            requests = [
-                request
-                for request in state.get("requests", {}).values()
-                if request.get("agent_id") == agent and request.get("status") == "Pending"
-            ]
-            sys.stdout.write(marker_json(sorted(requests, key=lambda item: item["request_id"])))
-            return 0
-        if method == "get_kill_switch":
-            sys.stdout.write(marker_json(False))
-            return 0
-        err("fake near: unknown view method " + method)
+    with Lock(STATE_PATH):
+        state = load_state()
 
-    if mode == "as-transaction":
-        txid = transaction_id(state)
-        save_state(state)
-        sys.stdout.write("Transaction ID: " + txid + "\n")
-        args_json = decoded_arguments(argv)
-        signer = argument_value(argv, "sign-as")
+        if mode == "as-read-only":
+            if method == "get_receipt_count":
+                sys.stdout.write(marker_json(state["receipt_count"]))
+                return 0
+            if method == "get_policy":
+                agent = decoded_arguments(argv).get("agent_id", "bound-agent.testnet")
+                sys.stdout.write(marker_json(policy_for(agent, state)))
+                return 0
+            if method == "get_receipt":
+                receipt_id = decoded_arguments(argv).get("receipt_id", 0)
+                sys.stdout.write(marker_json(receipt_for(receipt_id, state)))
+                return 0
+            if method == "get_request":
+                request_id = decoded_arguments(argv).get("request_id", 0)
+                request = state.get("requests", {}).get(str(request_id))
+                if request is None:
+                    err("fake near: no request with that id")
+                sys.stdout.write(marker_json(request))
+                return 0
+            if method == "get_request_ids":
+                agent = decoded_arguments(argv).get("agent_id", "bound-agent.testnet")
+                ids = [
+                    int(request_id)
+                    for request_id, request in state.get("requests", {}).items()
+                    if request.get("agent_id") == agent
+                ]
+                sys.stdout.write(marker_json(sorted(ids)))
+                return 0
+            if method == "get_open_requests":
+                agent = decoded_arguments(argv).get("agent_id", "bound-agent.testnet")
+                requests = [
+                    request
+                    for request in state.get("requests", {}).values()
+                    if request.get("agent_id") == agent
+                    and request.get("status") in ("Pending", "NeedsApproval")
+                ]
+                sys.stdout.write(marker_json(sorted(requests, key=lambda item: item["request_id"])))
+                return 0
+            if method == "get_kill_switch":
+                sys.stdout.write(marker_json(False))
+                return 0
+            err("fake near: unknown view method " + method)
 
-        if method == "approve_request":
-            if signer != "owner.testnet":
-                sys.stderr.write("Error: approve_request isn't allowed by the access key\n")
+        if mode == "as-transaction":
+            txid = transaction_id(state)
+            save_state(state)
+            sys.stdout.write("Transaction ID: " + txid + "\n")
+            args_json = decoded_arguments(argv)
+            signer = argument_value(argv, "sign-as")
+
+            if method == "approve_request":
+                receipt = settle_request(state, args_json.get("request_id"), signer)
+                save_state(state)
+                sys.stdout.write("succeeded\n")
+                sys.stdout.write(
+                    marker_json(
+                        {
+                            "request_id": receipt["request_id"],
+                            "approved": True,
+                            "reason": "",
+                            "rule": "the request was approved and the transfer settled",
+                            "evidence": [],
+                            "spent": receipt["spent_after"],
+                            "remaining": receipt["remaining_after"],
+                        }
+                    )
+                )
+                return 0
+
+            if method == "owner_approve_request":
+                receipt = settle_request(state, args_json.get("request_id"), signer, owner_only=True)
+                save_state(state)
+                sys.stdout.write("succeeded\n")
+                sys.stdout.write(
+                    marker_json(
+                        {
+                            "request_id": receipt["request_id"],
+                            "approved": True,
+                            "reason": "",
+                            "rule": "the owner approved the flagged request and the transfer settled",
+                            "evidence": [],
+                            "spent": receipt["spent_after"],
+                            "remaining": receipt["remaining_after"],
+                        }
+                    )
+                )
+                return 0
+
+            if method in ("owner_reject_request", "reject_request"):
+                owner_only = method == "owner_reject_request"
+                request = state.get("requests", {}).get(str(args_json.get("request_id")))
+                if request is None:
+                    err("fake near: no request with that id")
+                if owner_only and signer != state.get("owner", "owner.testnet"):
+                    err("fake near: only the owner may do this")
+                receipt = reject_request(
+                    state, args_json.get("request_id"), signer, args_json.get("reason", "")
+                )
+                save_state(state)
+                sys.stdout.write("succeeded\n")
+                sys.stdout.write(
+                    marker_json(
+                        {
+                            "request_id": receipt["request_id"],
+                            "approved": False,
+                            "reason": "CounterpartyBlocked",
+                            "rule": "the counterparty check refused this receiver",
+                            "evidence": receipt["evidence"],
+                            "spent": receipt["spent_after"],
+                            "remaining": receipt["remaining_after"],
+                        }
+                    )
+                )
+                return 0
+
+            if method == "flag_request":
+                request = flag_request(
+                    state, args_json.get("request_id"), signer, args_json.get("reasons")
+                )
+                save_state(state)
+                sys.stdout.write("succeeded\n")
+                sys.stdout.write(
+                    marker_json(
+                        {
+                            "request_id": request["request_id"],
+                            "approved": False,
+                            "reason": "CounterpartyWarned",
+                            "rule": "the counterparty check wants a human to look at this receiver",
+                            "evidence": request["flags"],
+                            "spent": "0",
+                            "remaining": "0",
+                        }
+                    )
+                )
+                return 0
+
+            if method == "call_paid_api":
+                sys.stderr.write("Error: call_paid_api doesn't match the access key\n")
                 return 1
-            receipt = settle_request(state, args_json.get("request_id"))
+
+            deposit = argument_value(argv, "attached-deposit")
+            gas = argument_value(argv, "prepaid-gas")
+
+            if method == "request_spend":
+                request_id, spent, budget = request_spend(state, args_json, deposit, gas)
+                save_state(state)
+                sys.stdout.write("succeeded\n")
+                outcome = {
+                    "request_id": request_id,
+                    "approved": False,
+                    "reason": "",
+                    "rule": "the request passed every hard check and is waiting for the counterparty check",
+                    "evidence": [],
+                    "spent": str(spent),
+                    "remaining": str(max(0, budget - spent)),
+                }
+                sys.stdout.write(marker_json(outcome))
+                return 0
+
             save_state(state)
             sys.stdout.write("succeeded\n")
             sys.stdout.write(
                 marker_json(
                     {
-                        "request_id": receipt["request_id"],
-                        "approved": True,
+                        "request_id": 0,
+                        "approved": False,
                         "reason": "",
-                        "rule": "the request was approved and the transfer settled",
+                        "rule": "the fake transaction completed",
                         "evidence": [],
-                        "spent": receipt["spent_after"],
-                        "remaining": receipt["remaining_after"],
+                        "spent": "0",
+                        "remaining": "5000000000000000000000000",
                     }
                 )
             )
             return 0
 
-        if method == "call_paid_api":
-            sys.stderr.write("Error: call_paid_api doesn't match the access key\n")
-            return 1
-
-        deposit = argument_value(argv, "attached-deposit")
-        gas = argument_value(argv, "prepaid-gas")
-
-        if method == "request_spend":
-            vendor = args_json.get("vendor", "")
-            if vendor == "stranger.testnet":
-                sys.stderr.write("Error: VendorNotAllowed: vendor not in allowlist\n")
-                return 1
-            if deposit and deposit != "0 NEAR" and "yoctoNEAR" in deposit:
-                sys.stderr.write("Error: Having a deposit with a function call action is not allowed\n")
-                return 1
-            if gas and "300.0 Tgas" in gas:
-                sys.stderr.write("Error: the key does not have enough allowance\n")
-                return 1
-
-            agent_id = args_json.get("agent_id")
-            request_id = state.get("next_request_id", 0)
-            state["next_request_id"] = request_id + 1
-            state["request_count"] = state.get("request_count", 0) + 1
-            if agent_id:
-                state["last_nonce"][agent_id] = state["last_nonce"].get(agent_id, 0) + 1
-                state.setdefault("requests", {})[str(request_id)] = {
-                    "request_id": request_id,
-                    "agent_id": agent_id,
-                    "vendor": vendor,
-                    "amount": args_json.get("amount", 0),
-                    "nonce": args_json.get("nonce", 0),
-                    "memo": args_json.get("memo", ""),
-                    "status": "Pending",
-                    "receipt_id": None,
-                    "created_at": 1794403451,
-                    "expires_at": 1796995451,
-                }
-            save_state(state)
-            sys.stdout.write("succeeded\n")
-            outcome = {
-                "request_id": request_id,
-                "approved": False,
-                "reason": "",
-                "rule": "the request passed every hard check and is waiting for the counterparty check",
-                "evidence": [],
-                "spent": "0",
-                "remaining": "5000000000000000000000000",
-            }
-            sys.stdout.write(marker_json(outcome))
-            return 0
-
-        save_state(state)
-        sys.stdout.write("succeeded\n")
-        sys.stdout.write(
-            marker_json(
-                {
-                    "request_id": 0,
-                    "approved": False,
-                    "reason": "",
-                    "rule": "the fake transaction completed",
-                    "evidence": [],
-                    "spent": "0",
-                    "remaining": "5000000000000000000000000",
-                }
-            )
-        )
-        return 0
-
     err("fake near: unknown mode " + mode)
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv))
+    try:
+        sys.exit(main(sys.argv))
+    except OSError as error:
+        if error.errno == errno.EACCES:
+            err("fake near: the state file cannot be locked")
+        raise

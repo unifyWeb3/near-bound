@@ -31,6 +31,7 @@ AGENT=""
 VENDOR=""
 AMOUNT=""
 NONCE=""
+# shellcheck disable=SC2034  # the counter file is read by demo/nonce.sh
 NONCE_FILE=""
 KEY=""
 MEMO="a spend from the agent"
@@ -167,42 +168,23 @@ print(f'{whole}.{frac}' if frac else whole)
 }
 
 # Persistent monotonic nonce counter with atomic locking.
-# Reads the last nonce from the counter file under flock, increments it, and
-# writes it back, all inside the lock so concurrent runs cannot reuse a nonce.
+# The counter is shared with demo/protocol_arm.sh, so one agent has one
+# sequence of nonces and neither script can replay the other's.
+# shellcheck disable=SC1091  # demo/nonce.sh is checked on its own
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/nonce.sh"
+
 pick_nonce() {
-  local file="${NONCE_FILE:-$HOME/.local/state/certalyn/nonce-${AGENT}.json}"
-  local dir last next
-  dir="$(dirname "$file")"
-  mkdir -p "$dir"
-  exec 9>"${file}.lock"
-  flock 9
-  last="$(python3 - "$file" <<'PY' 2>/dev/null || echo 0
-import json, sys
-try:
-    print(json.load(open(sys.argv[1], "r", encoding="utf-8")).get("nonce", 0))
-except Exception:
-    print(0)
-PY
-)"
-  last="${last:-0}"
-  case "$last" in
-    ''|*[!0-9]*) last=0 ;;
-  esac
-  next=$((last + 1))
-  python3 - "$file" "$next" >/dev/null <<'PY'
-import json, sys
-with open(sys.argv[1], "w", encoding="utf-8") as f:
-    json.dump({"nonce": int(sys.argv[2])}, f)
-PY
-  flock -u 9
-  exec 9>&-
-  NONCE="$next"
-  echo "using persistent nonce $NONCE for $AGENT (counter file $file)"
+  certalyn_lock_nonce "$AGENT" "$NONCE_FILE"
 }
 
 if [ -z "$NONCE" ]; then
   pick_nonce
 fi
+
+# The lock is held while the request is sent, and released afterwards.
+release_nonce() {
+  certalyn_release_nonce
+}
 
 BEFORE=$(count_receipts)
 BEFORE=${BEFORE:-0}
@@ -218,9 +200,14 @@ OUT=$("$NEAR_BIN" contract call-function as-transaction "$CONTRACT" request_spen
   base64-args "$ARGS_B64" \
   prepaid-gas '30.0 Tgas' attached-deposit '0 NEAR' \
   sign-as "$AGENT" network-config testnet sign-with-access-key-file "$KEY" send 2>&1)
+CALL_RC=$?
+
+# The nonce lock is released once the transaction has been sent, so the next
+# request of this agent takes a higher nonce and the two cannot cross.
+release_nonce
 
 HASH=$(printf '%s' "$OUT" | clean | grep -oE 'Transaction ID: [1-9A-HJ-NP-Za-km-z]{40,60}' | awk '{print $3}')
-if [ -z "$HASH" ]; then
+if [ "$CALL_RC" -ne 0 ] || [ -z "$HASH" ]; then
   echo "the call did not go through"
   printf '%s' "$OUT" | clean | grep -E 'Error|error|trap|not enough' | head -5
   exit 1
@@ -232,7 +219,15 @@ echo "  https://testnet.nearblocks.io/txs/$HASH"
 echo "  https://explorer.testnet.near.org/transactions/$HASH"
 
 OUTCOME=$(return_value "$OUT")
+REQUEST_ID=""
 if [ -n "$OUTCOME" ]; then
+  REQUEST_ID=$(printf '%s' "$OUTCOME" | python3 -c "
+import json, sys
+try:
+    print(int(json.load(sys.stdin).get('request_id', 0)))
+except Exception:
+    print(0)
+")
   echo
   printf '%s' "$OUTCOME" | python3 -c "
 import json,sys
@@ -249,28 +244,59 @@ else:
 "
 fi
 
-# Poll for settlement instead of a fixed sleep: read the receipt count until it
-# changes, up to a bounded number of attempts, then read any new receipts.
+# The request id and the agent one receipt belongs to.
+receipt_owner() {
+  "$NEAR_BIN" contract call-function as-read-only "$CONTRACT" get_receipt \
+    json-args "{\"receipt_id\":$1}" network-config testnet now 2>&1 \
+    | clean | python3 -c "
+import json, sys
+raw = sys.stdin.read()
+marker = 'return value (printed to stdout):'
+at = raw.find(marker)
+if at < 0:
+    raise SystemExit(0)
+try:
+    value, _ = json.JSONDecoder().raw_decode(raw[at + len(marker):].strip())
+except ValueError:
+    raise SystemExit(0)
+print(value.get('request_id'), value.get('agent_id'))
+"
+}
+
+# Poll for settlement instead of a fixed sleep. The receipt of this request is
+# found by its request id and its agent, so a receipt of another agent is
+# never reported as the settlement of this one.
 POLL_ATTEMPTS="${POLL_ATTEMPTS:-30}"
 POLL_INTERVAL="${POLL_INTERVAL:-1}"
 TRIES=0
 AFTER="$BEFORE"
+FOUND=""
 while [ "$TRIES" -lt "$POLL_ATTEMPTS" ]; do
   TRIES=$((TRIES + 1))
   sleep "$POLL_INTERVAL"
   AFTER=$(count_receipts)
   AFTER=${AFTER:-0}
-  [ "$AFTER" -gt "$BEFORE" ] 2>/dev/null && break
+  [ "$AFTER" -gt "$BEFORE" ] 2>/dev/null || continue
+  NEW="$BEFORE"
+  while [ "$NEW" -lt "$AFTER" ]; do
+    owner_line="$(receipt_owner "$NEW")"
+    # shellcheck disable=SC2086
+    set -- $owner_line
+    if [ "${1:-}" = "$REQUEST_ID" ] && [ "${2:-}" = "$AGENT" ]; then
+      FOUND="$NEW"
+      break
+    fi
+    NEW=$((NEW + 1))
+  done
+  [ -n "$FOUND" ] && break
 done
 
-if [ "$AFTER" -gt "$BEFORE" ] 2>/dev/null; then
-  NEW=$BEFORE
-  while [ "$NEW" -lt "$AFTER" ]; do
-    echo
-    echo "receipt $NEW"
-    "$NEAR_BIN" contract call-function as-read-only "$CONTRACT" get_receipt \
-      json-args "{\"receipt_id\":$NEW}" network-config testnet now 2>&1 \
-      | clean | python3 -c "
+if [ -n "$FOUND" ]; then
+  echo
+  echo "receipt $FOUND"
+  "$NEAR_BIN" contract call-function as-read-only "$CONTRACT" get_receipt \
+    json-args "{\"receipt_id\":$FOUND}" network-config testnet now 2>&1 \
+    | clean | python3 -c "
 import json, sys
 raw = sys.stdin.read()
 marker = 'return value (printed to stdout):'
@@ -286,8 +312,6 @@ print('  rule      ', receipt['rule'])
 for line in receipt.get('evidence', []):
     print('  evidence  ', line)
 "
-    NEW=$((NEW + 1))
-  done
 else
-  echo "no new receipt settled within $((POLL_ATTEMPTS * POLL_INTERVAL)) seconds"
+  echo "no receipt for request $REQUEST_ID settled within $((POLL_ATTEMPTS * POLL_INTERVAL)) seconds"
 fi

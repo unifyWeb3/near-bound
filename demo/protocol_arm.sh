@@ -32,6 +32,8 @@ AGENT="${2:?agent account}"
 VENDOR="${3:?vendor account}"
 KEY="${4:?path to the restricted key file}"
 NONCE="${5:-}"
+# The counter file of the agent. Empty means the shared default.
+NONCE_FILE="${NONCE_FILE:-}"
 
 PASS=0
 FAIL=0
@@ -118,35 +120,13 @@ PY
 }
 
 # Persistent monotonic nonce counter with atomic locking.
-nonce_file="${NONCE_FILE:-$HOME/.local/state/certalyn/protocol-nonce-${AGENT}.json}"
+# The counter is shared with demo/agent.sh, so one agent has one sequence of
+# nonces and neither script can replay the other's.
+# shellcheck disable=SC1091  # demo/nonce.sh is checked on its own
+. "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/nonce.sh"
+
 pick_nonce() {
-  local dir last next
-  dir="$(dirname "$nonce_file")"
-  mkdir -p "$dir"
-  exec 9>"${nonce_file}.lock"
-  flock 9
-  last="$(python3 - "$nonce_file" <<'PY' 2>/dev/null || echo 0
-import json, sys
-try:
-    print(json.load(open(sys.argv[1], "r", encoding="utf-8")).get("nonce", 0))
-except Exception:
-    print(0)
-PY
-)"
-  last="${last:-0}"
-  case "$last" in
-    ''|*[!0-9]*) last=0 ;;
-  esac
-  next=$((last + 1))
-  python3 - "$nonce_file" "$next" >/dev/null <<'PY'
-import json, sys
-with open(sys.argv[1], "w", encoding="utf-8") as f:
-    json.dump({"nonce": int(sys.argv[2])}, f)
-PY
-  flock -u 9
-  exec 9>&-
-  NONCE="$next"
-  echo "using persistent nonce $NONCE for $AGENT (counter file $nonce_file)"
+  certalyn_lock_nonce "$AGENT" "$NONCE_FILE"
 }
 
 if [ -z "$NONCE" ]; then
@@ -158,6 +138,9 @@ fi
 
 next_nonce() {
   NONCE=$((NONCE + 1))
+  # The counter file keeps every number this run used, so the next run of
+  # either script starts above all of them.
+  certalyn_save_nonce
 }
 
 # Build request JSON via Python json.dumps and base64-encode it.
@@ -261,4 +244,8 @@ next_nonce
 
 echo
 echo "$PASS passed, $FAIL failed"
+
+# The nonce lock is held for the whole run, so a request of the agent script
+# cannot cross this one.
+certalyn_release_nonce
 test "$FAIL" -eq 0

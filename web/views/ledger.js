@@ -24,13 +24,30 @@ export function renderFilters(state, update) {
   if (!host) return;
   const filter = state.filter ?? { outcome: 'all', text: '' };
 
-  const chips = ['all', 'Approved', 'Denied', 'Failed'].map((outcome) => {
+  // The filter row is built once and then updated in place. Remounting it on
+  // every keystroke would take the caret away from the field being typed in.
+  const existing = host.querySelector('input.filter-input');
+  if (existing) {
+    for (const chip of host.querySelectorAll('.chip-button')) {
+      chip.setAttribute(
+        'aria-pressed',
+        chip.getAttribute('data-outcome') === filter.outcome ? 'true' : 'false',
+      );
+    }
+    if (existing.value !== (filter.text ?? '')) {
+      existing.value = filter.text ?? '';
+    }
+    return;
+  }
+
+  const chips = ['all', 'Approved', 'Denied', 'Failed', 'Expired'].map((outcome) => {
     const node = el(
       'button',
       'chip-button',
       outcome === 'all' ? 'All outcomes' : outcome,
       { type: 'button', 'aria-pressed': filter.outcome === outcome ? 'true' : 'false' },
     );
+    node.setAttribute('data-outcome', outcome);
     node.addEventListener('click', () => update({ ...filter, outcome }));
     return node;
   });

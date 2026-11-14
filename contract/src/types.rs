@@ -182,8 +182,10 @@ impl PeriodTotals {
 
 /// Request data that cannot be added to the frozen `Request` record.
 ///
-/// This is the version-2 sidecar format. Version 1 had no approval rate
+/// This is the version-3 sidecar format. Version 1 had no approval rate
 /// window, so it cannot safely refund a failed payment in a newer window.
+/// Version 2 had no legacy flag, so a historical request could not be told
+/// apart from one the new accounting had already placed.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct RequestMeta {
     /// When the request expires, in seconds since the epoch.
@@ -192,6 +194,29 @@ pub struct RequestMeta {
     pub reserved_period_start: u64,
     /// The rate window in which the request was approved. Zero means unknown.
     pub approval_rate_window_start: u64,
+    /// True when the request comes from the historical layout.
+    ///
+    /// The historical layout kept one flat spend figure and did not record
+    /// the period a reservation belonged to, so a historical request settles
+    /// with the historical rules and its money is placed by the owner.
+    pub legacy: bool,
+}
+
+/// The money of one historical request that the new accounting has to place.
+///
+/// The historical layout kept one flat spend figure per agent and did not
+/// record the period a reservation belonged to. The migration therefore
+/// cannot say on its own where the money of a historical transfer belongs.
+/// It records the amount here and leaves the period to the owner, who names
+/// it explicitly instead of the contract guessing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
+pub struct LegacyReservation {
+    /// The amount the request reserved.
+    pub amount: u128,
+    /// The period the money is counted in. Zero means it is not placed yet.
+    pub reservation_period_start: u64,
+    /// True when the money moved.
+    pub moved: bool,
 }
 
 /// The schema marker written when the current sidecar layout is complete.
@@ -203,10 +228,57 @@ pub struct SchemaMarker {
 /// The persisted position of the bounded legacy migration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub struct MigrationProgress {
-    /// Zero is the request phase, one is the receipt phase, two is complete.
+    /// Zero is the request phase, one is the receipt phase, two is the
+    /// accounting phase, three is the verification phase and four is done.
     pub stage: u8,
     /// The next id to inspect in the current phase.
     pub cursor: u64,
+    /// The number of request ids that existed when the migration started.
+    pub request_end: u64,
+    /// The number of receipt ids that existed when the migration started.
+    pub receipt_end: u64,
+    /// The historical records that still need the owner to name a period.
+    pub unresolved: u64,
+}
+
+/// The result of naming the period of a historical transfer.
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[near(serializers = [json])]
+pub struct LegacyReconciliation {
+    pub request_id: u64,
+    pub agent_id: AccountId,
+    pub amount: u128,
+    pub moved: bool,
+    /// The period the money is counted in now.
+    pub reservation_period_start: u64,
+    /// The period it was counted in before.
+    pub previous_period_start: u64,
+}
+
+/// The state of the bounded migration, for the app and for the owner.
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[near(serializers = [json])]
+pub struct MigrationStatus {
+    /// True when the state carries the current schema.
+    pub complete: bool,
+    /// The phase the migration is in.
+    pub stage: u8,
+    /// The next id the migration inspects.
+    pub cursor: u64,
+    /// The historical records that still need the owner to name a period.
+    pub unresolved: u64,
+}
+
+/// The historical records whose money the owner still has to place.
+#[derive(Clone, PartialEq, Eq, Debug)]
+#[near(serializers = [json])]
+pub struct LegacyReconciliationView {
+    pub request_id: u64,
+    pub agent_id: AccountId,
+    pub amount: u128,
+    pub moved: bool,
+    /// The period the money is counted in. Zero means it is not placed yet.
+    pub reservation_period_start: u64,
 }
 
 /// The first and one-past-last ordinals in a receipt index.
