@@ -19,7 +19,9 @@
     <div id="error-bar" class="error-bar" role="alert" hidden></div>
 
     <header class="topbar">
-      <a class="brand-mark" href="#/overview"><span class="mark" aria-hidden="true">C</span>Certalyn</a>
+      <a class="brand-mark" href="#/overview">
+        <span class="mark" aria-hidden="true">C</span><span class="brand-name">Certalyn</span>
+      </a>
       <nav class="topnav" aria-label="Sections">
         <a href="#/overview" data-route="overview">Overview</a>
         <a href="#/policy" data-route="policy">Policy</a>
@@ -29,10 +31,12 @@
         <a href="#/judge" data-route="judge">Evidence</a>
       </nav>
       <div class="topbar-right">
-        <button id="deployment-toggle" class="ghost-button" type="button" title="Choose the deployment to read">
+        <button id="deployment-toggle" class="ghost-button" type="button" title="Choose the deployment to read" aria-label="Choose the deployment to read">
           <span class="dot small live" aria-hidden="true"></span><span id="deployment-label">bound-testnet-97685.testnet</span>
         </button>
-        <button id="wallet-button" class="ghost-button" type="button" aria-label="Connect a NEAR wallet">Connect wallet</button>
+        <button id="wallet-button" class="ghost-button" type="button" aria-label="Connect a NEAR wallet">
+          Connect<span class="wide-only"> wallet</span>
+        </button>
       </div>
     </header>
 
@@ -76,7 +80,7 @@
             <div class="hero-copy">
               <p class="kicker enter" style="--d: 40ms">NEAR testnet, open source, MIT, no backend</p>
               <h1 class="enter" style="--d: 90ms">
-                Your agent can ask for money. <em>The chain decides.</em>
+                Your agent can ask for&nbsp;money. <em>The chain decides.</em>
               </h1>
               <p class="lead enter" style="--d: 160ms">
                 Certalyn holds the money in a contract and enforces the limits you set. The agent

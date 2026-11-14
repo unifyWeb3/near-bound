@@ -100,6 +100,9 @@
   --radius-lg: 8px;
   --measure: 1240px;
   --sidebar: 248px;
+  /* The height of the top bar. Everything that sits under it reads this, so
+     the bar can change size without anything drifting under it. */
+  --topbar-h: 60px;
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
@@ -120,7 +123,7 @@
 }
 
 html {
-  scroll-padding-top: 96px;
+  scroll-padding-top: calc(var(--topbar-h) + 36px);
 }
 
 html,
@@ -133,6 +136,12 @@ body {
   font-size: 16px;
   line-height: 1.58;
   -webkit-text-size-adjust: 100%;
+}
+
+/* A transaction hash or an address is one long word. It has to be allowed
+   to break, or it pushes the page sideways on a phone. */
+main {
+  overflow-wrap: break-word;
 }
 
 /* The page is a sheet of paper: a faint dot grid over the cream. */
@@ -238,10 +247,20 @@ button {
   align-items: center;
   gap: var(--s5);
   padding: 0 var(--s6);
-  height: 60px;
+  height: var(--topbar-h);
   background: rgba(244, 241, 232, 0.92);
   backdrop-filter: blur(12px) saturate(1.1);
   border-bottom: 1px solid var(--line);
+  min-width: 0;
+}
+
+/* The deployment name can be long. It is cut with an ellipsis instead of
+   widening the bar, because the bar is the width of the screen. */
+#deployment-label {
+  max-width: 26ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .brand-mark {
@@ -299,6 +318,7 @@ button {
   display: flex;
   align-items: center;
   gap: var(--s3);
+  min-width: 0;
 }
 
 /* ---------- The shell ----------------------------------------------------- */
@@ -314,20 +334,25 @@ button {
 
 .sidebar {
   position: sticky;
-  top: 60px;
+  top: var(--topbar-h);
   align-self: start;
-  height: calc(100vh - 60px);
+  height: calc(100vh - var(--topbar-h));
   padding: var(--s7) var(--s5) var(--s7) 0;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   gap: var(--s6);
+  /* A grid item will not shrink below its content unless it is told to.
+     Without this the section links push the whole page sideways on a
+     phone, because the navigation is wider than the screen. */
+  min-width: 0;
 }
 
 .sidebar-nav {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .sidebar-nav a {
@@ -1485,7 +1510,7 @@ main {
 
 .error-bar {
   position: sticky;
-  top: 60px;
+  top: var(--topbar-h);
   z-index: 55;
   padding: var(--s3) var(--s6);
   background: var(--oxblood-soft);
@@ -1678,12 +1703,27 @@ footer {
     flex-direction: row;
     align-items: center;
     gap: var(--s4);
-    overflow-x: auto;
+    overflow-x: hidden;
   }
 
+  /* On a narrow screen the sections sit in one row and the row scrolls. The
+     navigation is the scroller, so the links never widen the page. */
   .sidebar-nav {
     flex-direction: row;
     gap: var(--s1);
+    flex: 1 1 auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .sidebar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* The row scrolls, so the edge fades to say so. */
+  .sidebar-nav {
+    -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
+    mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 28px), transparent 100%);
   }
 
   .sidebar-nav a {
@@ -1733,21 +1773,44 @@ footer {
 }
 
 @media (max-width: 720px) {
-  .topbar {
-    height: 56px;
-    padding: 0 var(--s4);
+  :root {
+    --topbar-h: 56px;
   }
 
-  .error-bar {
-    top: 56px;
+  .topbar {
+    height: var(--topbar-h);
+    padding: 0 var(--s4);
+    gap: var(--s3);
+  }
+
+  .topbar-right {
+    gap: var(--s2);
+  }
+
+  #deployment-label {
+    max-width: 13ch;
+  }
+
+  /* The bar is the width of the screen. The word on the wallet button and,
+   * on the narrowest screens, the word on the brand give way first. */
+  .wide-only {
+    display: none;
   }
 
   .hero h1 {
-    font-size: 34px;
+    font-size: clamp(30px, 8.4vw, 40px);
   }
 
   .section {
     padding: var(--s7) 0;
+  }
+}
+
+@media (max-width: 480px) {
+  /* On the narrowest screens the deployment name gives way. The mark beside
+     it still opens the deployment panel, and the name is in the panel. */
+  #deployment-label {
+    display: none;
   }
 }
 

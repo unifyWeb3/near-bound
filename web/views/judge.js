@@ -47,12 +47,12 @@ export function renderJudge(state) {
   }
 
   const history = el('div', 'judge-history');
-  history.append(el('h3', 'panel-title', 'Historical evidence (not the live deployment)'));
+  history.append(el('h3', 'panel-title', 'Historical evidence (the earlier artifact)'));
   history.append(
     el(
       'p',
       'muted small',
-      'The receipts on chain survive the redeploy of 2026-11-11, transaction Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls; storage was untouched. This is historical deployment evidence. It does not claim that the local remediation branch is deployed.',
+      'The receipts on chain survive the redeploy of 2026-11-11, transaction Bb64yQtpRcu1yFJyRWeizXZMRJnJY4HBDCWwKxoJw7Ls; storage was untouched. This is the historical deployment. The remediated contract is the one on the chain now.',
     ),
   );
   history.append(

@@ -172,6 +172,27 @@ test('the display type follows the viewport instead of jumping at a breakpoint',
   assert.ok(css.includes('--measure-text: 58ch'), 'the reading column has a measure');
 });
 
+test('the layout keeps the page from scrolling sideways on a phone', () => {
+  // The three defects the browser pass found, each one guarded here so it
+  // cannot come back without a browser to notice.
+  assert.ok(
+    /main\s*\{[^}]*overflow-wrap:\s*break-word/.test(css),
+    'a long hash or address may break',
+  );
+  assert.ok(
+    /\.sidebar\s*\{[^}]*min-width:\s*0/.test(css),
+    'the navigation may shrink instead of widening the page',
+  );
+  assert.ok(
+    /#deployment-label\s*\{[^}]*text-overflow:\s*ellipsis/.test(css),
+    'the deployment name is cut, not wrapped',
+  );
+  assert.ok(
+    /\.sidebar-nav\s*\{[^}]*overflow-x:\s*auto/.test(css),
+    'the navigation scrolls inside itself',
+  );
+});
+
 test('every element the console reads is in the page', async () => {
   const { readdirSync, readFileSync: read } = await import('node:fs');
   const { join } = await import('node:path');

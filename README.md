@@ -40,6 +40,12 @@ own account names in the three fields, and copy each command as it is
 printed. Nothing in this repository needs an account to read, so a judge can
 reproduce every figure with the read-only calls in the **Evidence** view.
 
+![The console: the hero, the policy of the deployment being read, the figures and the newest decisions](docs/screenshots/overview.jpg)
+
+The console was driven through a real browser at a wide and a narrow width.
+The pass, what it found and what it changed are in
+[docs/BROWSER-PASS.md](docs/BROWSER-PASS.md).
+
 ## What the agent key can and cannot do
 
 The agent never holds the money and never holds a key that can move it. It
