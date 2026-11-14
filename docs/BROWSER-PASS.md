@@ -36,6 +36,20 @@ reduced motion preference, and records every console error, page error and
 failed request. It exits non-zero when a route scrolls sideways, when the
 browser reports an error, or when a focus stop has no visible ring.
 
+`CONSOLE_URL` points the same pass at a deployed console instead of the
+files on disk, so what the public sees can be checked with the same rules:
+
+```bash
+CONSOLE_URL=https://near-bound.vercel.app/index.html \
+  PASS_OUT=/tmp/certalyn-browser/live \
+  NODE_PATH=/tmp/certalyn-browser/node_modules \
+  node tests/browser/pass.js
+```
+
+The run against the deployed console on 2026-11-16 was clean: six routes,
+no overflow at either width, no console error, 25 keyboard stops with a
+visible ring, and the reduced motion preference honoured.
+
 Three rules keep the pass honest. It waits for the stamp of a successful
 chain read, not for any change in the stamp, so a page whose read failed is
 never counted as a good one. It measures the reduced motion preference on

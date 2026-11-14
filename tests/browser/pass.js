@@ -22,6 +22,12 @@
  *
  * The Chromium binary can be given with CHROME_PATH when the Playwright
  * cache holds one already.
+ *
+ * The pass reads the console from disk by default. CONSOLE_URL points it at
+ * a deployed console instead, so the same checks can be run against what
+ * the public sees:
+ *
+ *   CONSOLE_URL=https://near-bound.vercel.app/index.html node tests/browser/pass.js
  */
 const { chromium } = require('playwright-core');
 const { spawn } = require('node:child_process');
@@ -31,6 +37,8 @@ const path = require('node:path');
 const WEB = path.resolve(__dirname, '..', '..', 'web');
 const OUT = process.env.PASS_OUT || '/tmp/certalyn-browser/out';
 const PORT = Number(process.env.PASS_PORT || 8123);
+const LIVE = process.env.CONSOLE_URL || '';
+const BASE = LIVE || `http://127.0.0.1:${PORT}/index.html`;
 const CHROME =
   process.env.CHROME_PATH ||
   path.join(
@@ -53,6 +61,7 @@ const NARROW = { width: 390, height: 844 };
 fs.mkdirSync(OUT, { recursive: true });
 
 function serve() {
+  if (LIVE) return null;
   return spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'], {
     cwd: WEB,
     stdio: 'ignore',
@@ -80,10 +89,11 @@ async function waitForRead(page) {
 
 (async () => {
   const server = serve();
-  await new Promise((resolve) => setTimeout(resolve, 900));
+  if (server) await new Promise((resolve) => setTimeout(resolve, 900));
   const report = {
     generated_at: new Date().toISOString(),
     browser: CHROME,
+    console: BASE,
     browser_mode: 'multi-process',
     routes: [],
     keyboard: [],
@@ -128,7 +138,7 @@ async function waitForRead(page) {
     for (const mode of MODES) {
       try {
         await open(mode);
-        await page.goto(`http://127.0.0.1:${PORT}/index.html${ROUTES[0].hash}`, {
+        await page.goto(`${BASE}${ROUTES[0].hash}`, {
           waitUntil: 'load',
           timeout: 45000,
         });
@@ -147,7 +157,7 @@ async function waitForRead(page) {
     for (const route of ROUTES) {
       const entry = { name: route.name, hash: route.hash, shots: {}, facts: {} };
       if (!(route === ROUTES[0])) {
-        await page.goto(`http://127.0.0.1:${PORT}/index.html${route.hash}`, { waitUntil: 'load' });
+        await page.goto(`${BASE}${route.hash}`, { waitUntil: 'load' });
       }
       await waitForRead(page);
       await page.screenshot({ path: path.join(OUT, `${route.name}-wide.png`), fullPage: true });
@@ -203,7 +213,7 @@ async function waitForRead(page) {
     }
 
     // ---- The keyboard order and the focus ring --------------------------
-    await page.goto(`http://127.0.0.1:${PORT}/index.html#/requests`, { waitUntil: 'load' });
+    await page.goto(`${BASE}#/requests`, { waitUntil: 'load' });
     await waitForRead(page);
     for (let index = 0; index < 26; index += 1) {
       await page.keyboard.press('Tab');
@@ -235,7 +245,7 @@ async function waitForRead(page) {
     // The same page, with the preference set on it. A second context would
     // be cleaner, but a browser in one process cannot hold two.
     await page.emulateMedia({ reducedMotion: 'reduce' });
-    await page.goto(`http://127.0.0.1:${PORT}/index.html#/overview`, { waitUntil: 'load' });
+    await page.goto(`${BASE}#/overview`, { waitUntil: 'load' });
     await waitForRead(page);
     report.reducedMotion = await page.evaluate(() => {
       const read = (selector) => {
@@ -257,7 +267,7 @@ async function waitForRead(page) {
     await page.emulateMedia({ reducedMotion: 'no-preference' });
   } finally {
     if (browser) await browser.close();
-    server.kill();
+    if (server) server.kill();
   }
 
   fs.writeFileSync(path.join(OUT, 'report.json'), JSON.stringify(report, null, 2));
@@ -269,6 +279,7 @@ async function waitForRead(page) {
   );
   const invisible = report.keyboard.filter((stop) => !stop.visible);
   const noRing = report.keyboard.filter((stop) => stop.outlineStyle === 'none');
+  console.log(`console           : ${BASE}`);
   console.log(`routes            : ${report.routes.length}`);
   console.log(`browser mode      : ${report.browser_mode}`);
   console.log(`overflow          : ${overflows.length ? overflows.map((r) => r.name).join(', ') : 'none'}`);
