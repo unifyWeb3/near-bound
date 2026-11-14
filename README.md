@@ -31,10 +31,14 @@ and its hash is checked by CI and by `docs/claims.json`.
 Testnet NEAR is free. You need the `near` CLI and this repository.
 
 1. Create three funded testnet accounts: one owner and treasury, one agent,
-   one counterparty to pay.
-2. Deploy the contract and register the agent with a policy.
-3. Give the agent a scoped key that can call `request_spend` and nothing else.
-4. Ask for a spend as the agent, approve it as the owner, and read the receipt.
+   one counterparty to pay. See three accounts in your keychain.
+2. Deploy the contract and register the agent with a policy. See the policy
+   with `get_policy`, and the limits you set in it.
+3. Give the agent a scoped key that can call `request_spend` and nothing
+   else. See the four protocol refusals in `demo/protocol_arm.out`.
+4. Ask for a spend as the agent, approve it as the owner, and read the
+   receipt. See a receipt with the rule that decided it and the figures
+   that were left.
 
 The console builds every command for you. Open the **Set up** view, put your
 own account names in the three fields, and copy each command as it is
@@ -47,9 +51,12 @@ The console was driven through a real browser at a wide and a narrow width.
 The pass, what it found and what it changed are in
 [docs/BROWSER-PASS.md](docs/BROWSER-PASS.md).
 
-The demo video is <https://youtu.be/MkUzLlyw50E>. The console is live at
-<https://near-bound.vercel.app/> and the contract is live on testnet at
-`bound-testnet-97685.testnet`.
+The demo video is <https://youtu.be/MkUzLlyw50E>. It was recorded before the
+console was redesigned, so it shows the same product and the same flow with
+the earlier type. The screenshot above is the console as it is now, and
+`tests/browser/record.js` records a new walk of it against the live site.
+The console is live at <https://near-bound.vercel.app/> and the contract is
+live on testnet at `bound-testnet-97685.testnet`.
 
 The hackathon entry copy, the demo post draft and the payload are in
 [docs/SUBMISSION.md](docs/SUBMISSION.md).
