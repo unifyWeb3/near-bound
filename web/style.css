@@ -105,7 +105,6 @@
   --topbar-h: 60px;
 
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --lift: 0 1px 2px rgba(27, 26, 21, 0.04), 0 18px 40px -28px rgba(27, 26, 21, 0.45);
 
   /* The display scale. The size follows the viewport, so the line never
@@ -224,16 +223,16 @@ button {
   font-family: var(--mono);
   font-size: 11px;
   font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+
   color: var(--muted);
 }
 
 .kicker {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+
   color: var(--jade);
 }
 
@@ -269,7 +268,7 @@ button {
   gap: var(--s3);
   font-family: var(--serif);
   font-size: 21px;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
   color: var(--ink);
   border: 0;
 }
@@ -464,7 +463,7 @@ main {
   font-family: var(--serif);
   font-weight: 400;
   font-size: 19px;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 
 .panel {
@@ -573,16 +572,16 @@ main {
 .wallet-label {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+
   color: var(--muted);
 }
 
 .chip {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+
   padding: 3px var(--s2);
   border-radius: 3px;
   border: 1px solid var(--line);
@@ -690,32 +689,12 @@ main {
   height: 6px;
 }
 
-/* The live mark. It breathes on a slow cycle, so a reader can tell at a
-   glance that the page is reading a chain and not a cache. It is the only
-   motion on the page that repeats. */
-.dot.live {
-  animation: live-pulse 2.4s ease-in-out infinite;
-}
-
-@keyframes live-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.35;
-    transform: scale(0.78);
-  }
-}
-
 /* ---------- The entrance ---------------------------------------------------- */
 
 /* One entrance, used with a delay per element. The page settles once when it
    opens and never moves on its own again. */
 .enter {
-  animation: settle 0.62s var(--ease-out) both;
+  animation: settle 0.62s var(--ease) both;
   animation-delay: var(--d, 0ms);
 }
 
@@ -826,15 +805,21 @@ main {
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+
   color: var(--muted);
+}
+
+/* The one figure that matters carries the accent. The rest of the grid is
+   quiet numbers in a printed table. */
+.stat.primary .stat-value {
+  color: var(--jade);
 }
 
 .stat-value {
   font-family: var(--mono);
   font-size: 22px;
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.02em;
+  letter-spacing: normal;
   margin-top: var(--s2);
 }
 
@@ -959,8 +944,8 @@ main {
 .pill {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+
   padding: 2px var(--s2);
   border-radius: 3px;
   border: 1px solid var(--line);
@@ -1195,7 +1180,7 @@ main {
   font-family: var(--mono);
   font-size: 11px;
   letter-spacing: 0.1em;
-  text-transform: uppercase;
+
   color: var(--muted);
 }
 
@@ -1233,7 +1218,7 @@ main {
   font-family: var(--serif);
   font-weight: 400;
   font-size: 20px;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 
 .step-body p {
@@ -1335,7 +1320,7 @@ main {
   font-family: var(--serif);
   font-weight: 400;
   font-size: 24px;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 
 .modal-body {
@@ -1453,8 +1438,8 @@ main {
 .wallet-subtitle {
   font-family: var(--mono);
   font-size: 11px;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0.01em;
+
   color: var(--muted);
   margin: var(--s5) 0 var(--s2);
 }
@@ -1572,7 +1557,7 @@ footer {
 .footer-brand {
   font-family: var(--serif);
   font-size: 26px;
-  letter-spacing: -0.01em;
+  letter-spacing: normal;
 }
 
 .footer-top p {
@@ -1671,7 +1656,7 @@ footer {
   font-family: var(--serif);
   font-weight: 400;
   font-size: var(--display-3);
-  letter-spacing: -0.018em;
+  letter-spacing: normal;
 }
 
 .phase-note {

@@ -1,6 +1,7 @@
 # Certalyn
 
-A spend limit for an agent that pays, enforced by a NEAR contract.
+A spend limit for an agent that pays, enforced by a NEAR contract. Testnet
+only, not audited, and no real money has moved.
 
 Certalyn holds the money in a contract. The owner sets a budget, a list of
 allowed receivers, a cap on one payment, a rate limit and a kill switch. The

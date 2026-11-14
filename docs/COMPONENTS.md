@@ -67,4 +67,6 @@ Native controls (`button`, `a`, `input`, `details/summary`), labelled inputs, `a
 
 ## The visual system
 
-One paper ground, one green, and a hairline rule between things. The type has three roles: a serif for the statements, a grotesque for reading, and a mono for anything the chain produced. The display size follows the viewport, the reading column is one measure, and the page has one entrance that plays once with a delay per element. A decision carries its state twice, as a colour on the margin rule and as a word in the badge, so the colour is never the only cue. The only motion that repeats on a loaded page is the live mark.
+One paper ground, one green, and a hairline rule between things. The type has three roles: a serif for the statements, a grotesque for reading, and a mono for anything the chain produced. The display size follows the viewport, the reading column is one measure, and the page has one entrance that plays once with a delay per element. A decision carries its state twice, as a colour on the margin rule and as a word in the badge, so the colour is never the only cue. Every label is sentence case in the mono family, tight tracking is kept for the two display sizes only, and one easing curve runs across the screen.
+
+Nothing on a loaded page loops. The console reads the chain when it opens and when it is refreshed, and it prints the time of the read, so no mark pretends to be a live connection. The loading skeleton is the only motion that repeats, and it repeats only while the chain is being read.

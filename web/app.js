@@ -192,7 +192,7 @@ function paint() {
       ? 'every agent is frozen'
       : state.stale
         ? 'showing the last good read'
-        : 'the chain is being read live';
+        : 'the last read is on screen';
   }
 
   paintWallet(state);

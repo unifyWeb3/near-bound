@@ -60,15 +60,15 @@ export function curlPolicy(contract, agent) {
  * The phases of the setup.
  *
  * Eight commands in one list is a wall. The phases give the screen one job
- * and one order: get the accounts, put the contract in place, give the agent
- * its key, make a decision, take the key back.
+ * and one order, and each one is named after what the reader has done when
+ * it is over, the way a walkthrough names its steps.
  */
 export const SETUP_PHASES = Object.freeze([
-  { id: 'accounts', title: 'Accounts', note: 'Three funded testnet accounts.' },
-  { id: 'contract', title: 'Contract and policy', note: 'The contract, the agent and its limits.' },
-  { id: 'access', title: 'Access', note: 'One scoped key, and nothing more.' },
-  { id: 'decisions', title: 'Decisions', note: 'Ask, approve, read the receipt.' },
-  { id: 'revoke', title: 'Revoke', note: 'Stop the agent with one transaction.' },
+  { id: 'accounts', title: 'Create three accounts', note: 'One owner, one agent, one counterparty.' },
+  { id: 'contract', title: 'Deploy and set the limits', note: 'The contract, the agent and its policy.' },
+  { id: 'access', title: 'Give the agent one key', note: 'One method, one receiver, one allowance.' },
+  { id: 'decisions', title: 'Ask, approve, read', note: 'One spend, one receipt.' },
+  { id: 'revoke', title: 'Take the key back', note: 'The agent stops with one transaction.' },
 ]);
 
 /**

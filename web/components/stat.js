@@ -9,13 +9,14 @@ import { el } from '../lib/dom.js';
  * @property {string} label
  * @property {string|number} value
  * @property {string} [note]
+ * @property {boolean} [primary] The one figure that matters.
  */
 
 /**
  * @param {StatProps} props
  */
-export function stat({ label, value, note }) {
-  const node = el('div', 'stat');
+export function stat({ label, value, note, primary = false }) {
+  const node = el('div', primary ? 'stat primary' : 'stat');
   node.append(el('div', 'stat-label', label));
   node.append(el('div', 'stat-value', String(value)));
   if (note) node.append(el('div', 'stat-note', note));

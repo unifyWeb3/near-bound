@@ -58,7 +58,12 @@ export function renderStats(state) {
     .reduce((sum, receipt) => sum + BigInt(receipt.amount), 0n);
 
   const cards = [
-    stat({ label: 'Under management', value: formatNear(state.treasury ?? 0n), note: 'held by the contract' }),
+    stat({
+      label: 'Under management',
+      value: formatNear(state.treasury ?? 0n),
+      note: 'held by the contract',
+      primary: true,
+    }),
     stat({ label: 'Approved', value: formatCount(approved), note: 'on this page' }),
     stat({ label: 'Blocked', value: formatCount(denied + failed), note: 'on this page, never paid out' }),
     stat({ label: 'Allowed value', value: formatNear(allowed), note: 'moved to the counterparty on this page' }),

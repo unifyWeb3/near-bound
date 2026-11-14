@@ -46,6 +46,42 @@ browser reports an error, or when a focus stop has no visible ring.
 | 4 | The headline broke after "for", leaving "money." alone on a line | Low | The last two words of the headline cannot be separated | The wide pass shows two balanced lines |
 | 5 | The Evidence view still called the live deployment the historical one, after the remediated contract replaced it | Low | The heading names the earlier artifact and the text says which contract is on the chain | The wide pass of the Evidence view |
 
+## The de-slop pass
+
+The console was then read against the checklist in
+[heydamir/unslop](https://github.com/heydamir/unslop), which is licensed
+under CC BY 4.0, and against two more pages that were not read in the first
+pass: [agentpassport.ai](https://agentpassport.ai) and
+[metriclp.xyz](https://metriclp.xyz).
+
+What the two pages taught:
+
+- agentpassport.ai names its steps after what the reader has done when the
+  step is over: "01 Install with one line", "02 Set your limits", "03 Ask for
+  a job". The setup phases now read "Create three accounts", "Deploy and set
+  the limits", "Give the agent one key", "Ask, approve, read" and "Take the
+  key back".
+- metriclp.xyz states the honest qualifier in its first paragraph, before
+  anything else: independent, unofficial, read only. The README now carries
+  "Testnet only, not audited, and no real money has moved" in its opening
+  line rather than in a table further down.
+
+What the checklist found in the console, and what changed:
+
+| Finding | Severity | Fix | Check |
+| --- | --- | --- | --- |
+| Eight labels were set in capitals with wide tracking, the tell of a screen nobody decided | High | Every label is sentence case in the same mono family, the way a printed record sets a column head | The browser pass screenshots |
+| Seven sizes carried negative letter spacing, including the 19 and 20 pixel headings | Medium | Tight tracking is left on the two display sizes and the large figure, and nowhere else | The browser pass renders the page |
+| The screen had two easing curves | Low | One curve across the screen | `one easing curve, and it is used everywhere` |
+| The mark beside the deployment name breathed, which claims a live connection the console does not have | High | The mark is still. The console reads the chain when it opens and when it is refreshed, and it prints the time of the read | `nothing loops on a loaded page, because the console is not a live feed` |
+| Six figures sat in six equal boxes, which reads as a template | Medium | The one figure that matters, the money the contract holds, carries the accent and the rest stay quiet numbers in a printed table | The overview screenshot |
+| The sidebar said the chain was being read live | High | It says the last read is on screen | The overview screenshot |
+
+The slop scan over the prose is explicit and empty: no em dash or en dash, no
+exclamation mark outside a comment, no hype word from the list the checklist
+names, no emoji in the interface, and no placeholder text in the README or
+the docs.
+
 ## The results after the fix
 
 | Route | 1440 x 900 | 390 x 844 | Console errors |

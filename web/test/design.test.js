@@ -119,8 +119,8 @@ test('the setup is grouped into the named phases and the rail names them', () =>
   renderEnable({ enableNames: names }, () => {});
   const rail = document.getElementById('setup-rail');
   assert.strictEqual(rail.children.length, SETUP_PHASES.length);
-  assert.ok(rail.textContent.includes('Accounts'));
-  assert.ok(rail.textContent.includes('Decisions'));
+  assert.ok(rail.textContent.includes('Create three accounts'));
+  assert.ok(rail.textContent.includes('Ask, approve, read'));
 
   const rendered = document.getElementById('steps');
   const headings = rendered.children.filter((child) => child.tagName === 'DIV' && child.getAttribute?.('id'));
@@ -129,6 +129,15 @@ test('the setup is grouped into the named phases and the rail names them', () =>
   assert.strictEqual(lists.length, SETUP_PHASES.length);
   const total = lists.reduce((sum, list) => sum + list.children.length, 0);
   assert.strictEqual(total, 8, 'every step is still there');
+});
+
+test('the phase names say what the reader has done, not what the box is called', () => {
+  for (const phase of SETUP_PHASES) {
+    assert.ok(
+      /^(Create|Deploy|Give|Ask|Take)\b/.test(phase.title),
+      `the phase "${phase.title}" is not named after an action`,
+    );
+  }
 });
 
 test('the rail is a control, not a link into the router', () => {
@@ -147,23 +156,23 @@ test('the rail is a control, not a link into the router', () => {
 test('the page settles once when it opens and never moves on its own', () => {
   assert.ok(html.includes('class="enter"'), 'the entrance class is used');
   assert.ok(css.includes('@keyframes settle'), 'the entrance has one keyframe');
-  assert.ok(css.includes('--ease-out'), 'the entrance has its own easing');
   assert.ok(
     css.includes('@media (prefers-reduced-motion: reduce)'),
     'the reduced motion preference is honoured',
   );
+  // One easing curve across the screen.
+  const curves = new Set([...css.matchAll(/cubic-bezier\([^)]*\)/g)].map((match) => match[0]));
+  assert.strictEqual(curves.size, 1, 'one easing curve, and it is used everywhere');
 });
 
-test('the live mark breathes and it is the only motion that repeats on a loaded page', () => {
-  assert.ok(html.includes('dot small live'), 'the deployment mark is live');
-  assert.ok(css.includes('@keyframes live-pulse'));
-
-  // Every repeating animation has to say something: the live mark says the
-  // page is reading a chain, the skeleton says the chain is still being read.
+test('nothing loops on a loaded page, because the console is not a live feed', () => {
+  // The console reads the chain when it opens and when it is refreshed, and
+  // it prints the time of the read. A mark that breathes would claim a
+  // connection the console does not have.
   const repeating = [...css.matchAll(/animation:\s*([^;]*infinite[^;]*);/g)].map((match) => match[1]);
-  assert.strictEqual(repeating.length, 2, 'two repeating animations, and no more');
-  assert.ok(repeating.some((value) => value.includes('live-pulse')));
-  assert.ok(repeating.some((value) => value.includes('shimmer')));
+  assert.strictEqual(repeating.length, 1, 'one repeating animation');
+  assert.ok(repeating[0].includes('shimmer'), 'and it is the loading state');
+  assert.ok(!css.includes('live-pulse'), 'no mark pretends to be a live connection');
 });
 
 test('the display type follows the viewport instead of jumping at a breakpoint', () => {
