@@ -51,6 +51,75 @@ note "submission payload: the static fields hold"
 out=$(expect_exit "static check" 0 python3 "$SCRIPT" --check)
 expect_text "static check" "the static fields hold" "$out"
 expect_text "static check" "the builder's" "$out"
+expect_text "static check" "the demo post draft holds too" "$out"
+
+note "submission payload: the demo post is printed for the human to paste"
+out=$(expect_exit "post" 0 python3 "$SCRIPT" --post)
+expect_text "post" "the demo post, as plain text" "$out"
+expect_text "post" "Certalyn" "$out"
+expect_text "post" "@NEARProtocol" "$out"
+expect_text "post" "#NEARHackathon" "$out"
+expect_text "post" "nothing was posted by this script" "$out"
+
+note "submission payload: a draft that carries the old name fails"
+TMPDRAFT="$(mktemp -t certalyn-draft.XXXXXX.md)"
+cat > "$TMPDRAFT" <<'MD'
+# Draft
+
+## The demo post
+
+> SpendGuard is live on near testnet.
+>
+> Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon
+>
+> https://near-bound.vercel.app
+> https://github.com/unifyWeb3/near-bound
+
+What the draft follows
+MD
+out=$(expect_exit "old name" 1 python3 "$SCRIPT" --check --post-file "$TMPDRAFT")
+expect_text "old name" "still carries the old product name" "$out"
+
+note "submission payload: a draft without the tags fails"
+cat > "$TMPDRAFT" <<'MD'
+# Draft
+
+## The demo post
+
+> Certalyn is live on near testnet.
+>
+> https://near-bound.vercel.app
+> https://github.com/unifyWeb3/near-bound
+
+What the draft follows
+MD
+out=$(expect_exit "no tags" 1 python3 "$SCRIPT" --check --post-file "$TMPDRAFT")
+expect_text "no tags" "has no the NEAR tag" "$out"
+expect_text "no tags" "has no the event tag" "$out"
+
+note "submission payload: a draft with a dash fails"
+# The dash is written as an escape, so the file that holds the check does
+# not carry one itself.
+EMDASH="$(printf '\u2014')"
+cat > "$TMPDRAFT" <<MD
+# Draft
+
+## The demo post
+
+> Certalyn is live on near testnet.
+>
+> Built at NEAR HACKATHON. @NEARProtocol #NEARHackathon
+>
+> https://near-bound.vercel.app
+> https://github.com/unifyWeb3/near-bound
+> The console ${EMDASH} the one the judge opens.
+
+What the draft follows
+MD
+out=$(expect_exit "dash" 1 python3 "$SCRIPT" --check --post-file "$TMPDRAFT")
+expect_text "dash" "has a dash that should be a full stop" "$out"
+
+rm -f "$TMPDRAFT"
 
 note "submission payload: the personal values are never guessed"
 out=$(expect_exit "no personal values" 2 python3 "$SCRIPT")

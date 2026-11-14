@@ -7,12 +7,15 @@ It builds the payload, checks every field against the rules in the official
 file, and prints it for the human to read before they send it themselves.
 
     python3 scripts/submission-payload.py --check
+    python3 scripts/submission-payload.py --post
     python3 scripts/submission-payload.py --lead-name "Ada Lovelace" \
         --email "ada@example.com" --near-address "ada.near" --consent
 
 The check mode reads the static fields from the repository and is safe to
-run in CI. The full mode needs the three personal values and the consent,
-and it prints the payload and the curl command. It never calls the API.
+run in CI. The post mode prints the demo post as plain text for the human
+to paste, with the list of what has to travel with it. The full mode needs
+the three personal values and the consent, and it prints the payload and
+the curl command. It never calls the API.
 
 The rules: https://nearhackathon.com/HACKATHON.md
 """
@@ -35,6 +38,15 @@ ALLOWED_TRACKS = {
     "realworld", "games", "nfts", "memecoins", "social", "open",
 }
 NEAR_ADDRESS = re.compile(r"^(([a-z\d]+[-_])*[a-z\d]+\.)*([a-z\d]+[-_])*[a-z\d]+$")
+CONSOLE_URL = "https://near-bound.vercel.app"
+POST_REQUIRED = (
+    ("Certalyn", "the product name"),
+    ("@NEARProtocol", "the NEAR tag"),
+    ("#NEARHackathon", "the event tag"),
+    ("NEAR HACKATHON", "the line that says it was built at the event"),
+    (CONSOLE_URL, "the live console"),
+    ("https://github.com/unifyWeb3/near-bound", "the repository"),
+)
 IDEA = (
     "An agent that can pay for APIs, data and compute has no ceiling on what it "
     "spends, and the ceiling it does have lives in a prompt, where it can be "
@@ -64,7 +76,52 @@ def read_demo_url():
     return match.group(0) if match else ""
 
 
-def check_static(demo_url):
+def read_demo_post(path=None):
+    """The demo post draft, as the plain text the human pastes."""
+    target = path or os.path.join(ROOT, "docs", "SUBMISSION.md")
+    with open(target, "r", encoding="utf-8") as handle:
+        text = handle.read()
+    if "## The demo post" not in text:
+        return ""
+    body = text.split("## The demo post", 1)[1].split("What the draft follows", 1)[0]
+    lines = []
+    for line in body.splitlines():
+        if not line.startswith(">"):
+            continue
+        lines.append(line[1:].lstrip(" "))
+    while lines and not lines[0].strip():
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+    return "\n".join(lines).strip()
+
+
+def check_post(post):
+    """The draft has to name the product, tag the event and carry the links.
+
+    The published post of an earlier pass said the old name and never said
+    the new one. A check that reads the draft cannot stop the human from
+    publishing the wrong text, but it can stop the packet from being
+    called ready while the draft still carries the old name.
+    """
+    problems = []
+    if not post:
+        problems.append("the demo post draft was not found in the packet")
+        return problems
+    for needle, what in POST_REQUIRED:
+        if needle not in post:
+            problems.append(f"the demo post draft has no {what}")
+    if "spendguard" in post.lower():
+        problems.append("the demo post draft still carries the old product name")
+    for dash in ("\u2014", "\u2013"):
+        if dash in post:
+            problems.append("the demo post draft has a dash that should be a full stop")
+    if len(post) > 3000:
+        problems.append(f"the demo post draft is {len(post)} characters, too long for one post")
+    return problems
+
+
+def check_static(demo_url, post=""):
     """Every field that does not need the human."""
     problems = []
     if not 2 <= len(PROJECT_NAME) <= 80:
@@ -84,6 +141,7 @@ def check_static(demo_url):
         problems.append("no demo post link was found in docs/SUBMISSION.md")
     elif len(demo_url) > 300 or not demo_url.startswith("https://"):
         problems.append("demoUrl is not an http(s) URL of at most 300 characters")
+    problems.extend(check_post(post))
     return problems
 
 
@@ -103,11 +161,16 @@ def check_personal(lead_name, email, near_address):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--check", action="store_true", help="check the fields that need no human")
+    parser.add_argument("--post", action="store_true", help="print the demo post as plain text")
     parser.add_argument("--lead-name", help="the team lead's name")
     parser.add_argument("--email", help="the contact email")
     parser.add_argument("--near-address", help="the mainnet account for the prize")
     parser.add_argument("--demo-url", help="the demo post, when it differs from the packet")
     parser.add_argument("--request-id", help="the request id, generated once and reused")
+    parser.add_argument(
+        "--post-file",
+        help="read the demo post draft from this file instead of the packet",
+    )
     parser.add_argument(
         "--consent",
         action="store_true",
@@ -116,7 +179,8 @@ def main():
     args = parser.parse_args()
 
     demo_url = args.demo_url or read_demo_url()
-    problems = check_static(demo_url)
+    post = read_demo_post(args.post_file)
+    problems = check_static(demo_url, post)
 
     if args.check:
         if problems:
@@ -128,7 +192,33 @@ def main():
             "the static fields hold: projectName, size, tracks, projectUrl, "
             f"demoUrl, and an idea of {len(IDEA)} characters"
         )
+        print(
+            f"the demo post draft holds too: {len(post)} characters, the product "
+            "name, both tags, the console and the repository"
+        )
         print("the lead name, the email, the payout account and the consent are the builder's")
+        return 0
+
+    if args.post:
+        problems = check_post(post)
+        if problems:
+            print("the demo post draft has problems:")
+            for problem in problems:
+                print("  " + problem)
+            return 1
+        print("the demo post, as plain text for the human to paste:")
+        print()
+        print(post)
+        print()
+        print(f"that is {len(post)} characters, and it needs the long post the account already has")
+        print("what travels with it:")
+        print("  the demo video: video/certalyn-console-demo.mp4, or the published one")
+        print("  https://youtu.be/MkUzLlyw50E")
+        print("  the console: https://near-bound.vercel.app")
+        print("  the repository: https://github.com/unifyWeb3/near-bound")
+        print("  the rules ask for the product name, @NEARProtocol and #NEARHackathon,")
+        print("  the line that it was built at NEAR HACKATHON, and the video attached")
+        print("nothing was posted by this script")
         return 0
 
     missing = [

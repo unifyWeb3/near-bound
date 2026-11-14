@@ -18,6 +18,7 @@ can check what happened without trusting the console.
 - Repository: `unifyWeb3/near-bound`
 - Console: <https://near-bound.vercel.app/>
 - Contract on testnet: `bound-testnet-97685.testnet`
+- Demo post: <https://x.com/oxunify/status/2120085871852478803>
 - Licence: MIT
 
 The remediated contract is deployed on testnet. It replaced the older artifact
@@ -57,6 +58,10 @@ the earlier type. The screenshot above is the console as it is now, and
 `tests/browser/record.js` records a new walk of it against the live site.
 The console is live at <https://near-bound.vercel.app/> and the contract is
 live on testnet at `bound-testnet-97685.testnet`.
+
+The demo post carries the name the product had when it was posted. The
+console, the repository and the contract it links are the ones above, and
+the project is Certalyn.
 
 The hackathon entry copy, the demo post draft and the payload are in
 [docs/SUBMISSION.md](docs/SUBMISSION.md).
