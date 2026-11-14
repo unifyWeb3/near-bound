@@ -51,6 +51,9 @@ The demo video is <https://youtu.be/MkUzLlyw50E>. The console is live at
 <https://near-bound.vercel.app/> and the contract is live on testnet at
 `bound-testnet-97685.testnet`.
 
+The hackathon entry copy, the demo post draft and the payload are in
+[docs/SUBMISSION.md](docs/SUBMISSION.md).
+
 ## What the agent key can and cannot do
 
 The agent never holds the money and never holds a key that can move it. It
